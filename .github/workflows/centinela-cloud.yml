@@ -3,8 +3,6 @@ name: Cloud Guardian 24/7 (EduTrack Quality Gates)
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-  schedule:
-    - cron: '*/30 * * * *'  # Autonomous 30-minute schedule runner on GitHub Actions
   workflow_dispatch:        # Manual trigger in GitHub web
 
 permissions:
