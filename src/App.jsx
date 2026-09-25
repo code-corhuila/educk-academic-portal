@@ -1,37 +1,56 @@
-import React, { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { adaptGradesFromApi, mockApiResponse } from './gradeAdapter.js';
+import { averageBySubject, filterBySubject, weightedAverage } from './gradeCalculations.js';
+import './styles.css';
+
+const student = { name: 'Juan López', school: 'Colegio EduTrack · 8°A', guardian: 'María López' };
 
 export default function App() {
-  const [grades, setGrades] = useState([
-    { id: 'g-1', student: 'Carlos Pérez', assignment: 'Parcial 1', score: 4.5, feedback: 'Excelente sustentación' },
-    { id: 'g-2', student: 'Ana Gómez', assignment: 'Parcial 1', score: 3.8, feedback: 'Buen desarrollo en taller' },
-    { id: 'g-3', student: 'Luis Ramos', assignment: 'Parcial 1', score: 2.9, feedback: 'Reforzar microservicios' }
-  ]);
+  const [selectedSubject, setSelectedSubject] = useState('ALL');
+  const grades = useMemo(() => adaptGradesFromApi(mockApiResponse), []);
+  const subjects = useMemo(() => [...new Set(grades.map((grade) => grade.subjectName))], [grades]);
+  const visibleGrades = useMemo(() => filterBySubject(grades, selectedSubject), [grades, selectedSubject]);
+  const visibleAverage = weightedAverage(visibleGrades);
+  const subjectSummaries = averageBySubject(grades);
+  const bestSubject = subjectSummaries.at(0);
+  const supportSubject = subjectSummaries.at(-1);
+  const isPassing = visibleAverage >= 3;
 
   return (
-    <div style={{ fontFamily: 'sans-serif', maxWidth: 800, margin: '40px auto', padding: 24, background: '#fff', borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
-      <h2 style={{ color: '#065f46' }}>EduTrack — Gestión Académica y Notas</h2>
-      <p style={{ color: '#666', fontSize: 13 }}>Portal Docente & Boletines (HU-001) | Puerto 3002</p>
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand">Edu<span>Track</span></div>
+        <div className="student-card"><b>JL</b><span>{student.name}<small>{student.school}</small></span></div>
+        <nav aria-label="Navegación principal">
+          <span>Resumen</span><strong aria-current="page">Calificaciones</strong><span>Asistencia</span>
+          <span>Mensajes</span><span>Notificaciones</span>
+        </nav>
+        <div className="guardian">ML <span>{student.guardian}<small>Madre / Tutora</small></span></div>
+      </aside>
 
-      <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 16 }}>
-        <thead>
-          <tr style={{ background: '#f0fdf4', textAlign: 'left', borderBottom: '2px solid #a7f3d0' }}>
-            <th style={{ padding: 10 }}>Estudiante</th>
-            <th style={{ padding: 10 }}>Evaluación</th>
-            <th style={{ padding: 10 }}>Calificación (0.0 - 5.0)</th>
-            <th style={{ padding: 10 }}>Retroalimentación</th>
-          </tr>
-        </thead>
-        <tbody>
-          {grades.map(g => (
-            <tr key={g.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
-              <td style={{ padding: 10, fontWeight: 'bold' }}>{g.student}</td>
-              <td style={{ padding: 10 }}>{g.assignment}</td>
-              <td style={{ padding: 10, color: g.score >= 3.0 ? '#059669' : '#dc2626', fontWeight: 'bold' }}>{g.score.toFixed(1)}</td>
-              <td style={{ padding: 10, color: '#4b5563', fontSize: 13 }}>{g.feedback}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <main>
+        <header><div><p>ACADÉMICO</p><h1>Calificaciones</h1><span>Consulta el rendimiento de Juan por materia.</span></div><span className="period">Periodo 2</span></header>
+        <div className="demo-notice" role="status"><b>Datos de demostración</b><span>La integración con Academic API se realizará en un segundo PR.</span></div>
+
+        <section className="summary-grid" aria-label="Resumen académico">
+          <article><small>{selectedSubject === 'ALL' ? 'Promedio general' : 'Promedio filtrado'}</small><strong>{visibleAverage.toFixed(1)}</strong><em className={isPassing ? 'success' : 'danger'}>{isPassing ? 'Buen desempeño' : 'Requiere apoyo'}</em></article>
+          <article><small>Mejor materia</small><strong>{bestSubject?.average.toFixed(1) ?? '0.0'}</strong><em>{bestSubject?.subject ?? 'Sin datos'}</em></article>
+          <article><small>Por reforzar</small><strong>{supportSubject?.average.toFixed(1) ?? '0.0'}</strong><em>{supportSubject?.subject ?? 'Sin datos'}</em></article>
+        </section>
+
+        <section className="grades-panel">
+          <div className="panel-heading"><div><h2>Detalle por materia</h2><p>{visibleGrades.length} calificaciones visibles</p></div>
+            <label>Materia<select aria-label="Filtrar calificaciones por materia" value={selectedSubject} onChange={(event) => setSelectedSubject(event.target.value)}>
+              <option value="ALL">Todas las materias</option>{subjects.map((subject) => <option key={subject}>{subject}</option>)}
+            </select></label>
+          </div>
+          <div className="table-scroll" tabIndex="0" aria-label="Tabla de calificaciones con desplazamiento horizontal">
+            <table><caption>Calificaciones de {student.name}</caption><thead><tr><th scope="col">Materia</th><th scope="col">Actividad</th><th scope="col">Fecha</th><th scope="col">Calificación</th><th scope="col">Estado</th></tr></thead>
+              <tbody>{visibleGrades.length ? visibleGrades.map((grade) => <tr key={grade.id}><td><b>{grade.subjectName}</b><small>{grade.feedback}</small></td><td>{grade.activityTitle}</td><td>{grade.date}</td><td className="score">{grade.score.toFixed(1)}</td><td><span className={grade.score >= 3 ? 'pill pass' : 'pill risk'}>{grade.score >= 3 ? 'Aprobada' : 'En riesgo'}</span></td></tr>) : <tr><td colSpan="5">No hay calificaciones para esta materia.</td></tr>}</tbody>
+            </table>
+          </div>
+        </section>
+      </main>
     </div>
   );
 }
