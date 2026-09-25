@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { adaptGradesFromApi, mockApiResponse } from './gradeAdapter.js';
-import { averageBySubject, filterBySubject, weightedAverage } from './gradeCalculations.js';
+import { averageBySubject, classifyAverage, filterBySubject, weightedAverage } from './gradeCalculations.js';
 import './styles.css';
 
 const student = { name: 'Juan López', school: 'Colegio EduTrack · 8°A', guardian: 'María López' };
@@ -14,7 +14,7 @@ export default function App() {
   const subjectSummaries = averageBySubject(grades);
   const bestSubject = subjectSummaries.at(0);
   const supportSubject = subjectSummaries.at(-1);
-  const isPassing = visibleAverage >= 3;
+  const isPassing = classifyAverage(visibleAverage) === 'approved';
 
   return (
     <div className="app-shell">

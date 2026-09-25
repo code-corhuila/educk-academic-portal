@@ -9,6 +9,10 @@ export function weightedAverage(grades) {
   return validGrades.reduce((total, grade) => total + grade.score * grade.weight, 0) / totalWeight;
 }
 
+export function classifyAverage(average) {
+  return average >= 3 ? 'approved' : 'failed';
+}
+
 export function averageBySubject(grades) {
   const subjects = [...new Set(grades.map((grade) => grade.subjectName))];
   return subjects
