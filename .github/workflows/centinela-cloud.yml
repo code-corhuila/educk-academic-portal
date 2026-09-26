@@ -1,3 +1,9 @@
+# SELF-HOSTED JUSTIFICATION:
+# La organizacion code-corhuila agoto los minutos gratuitos de GitHub Actions
+# y tiene una factura pendiente que bloquea los runners hospedados.
+# Este workflow usa un runner self-hosted para no depender del billing.
+# La accion actions/setup-python@v5 falla en Windows self-hosted por un bug conocido
+# de tool-cache, por eso se usa $env:LOCALAPPDATA + GITHUB_PATH.
 name: Cloud Guardian 24/7 (EduTrack Quality Gates)
 
 on:
