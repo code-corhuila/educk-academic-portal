@@ -20,9 +20,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Add Python to PATH
+        run: |
+          $env:LOCALAPPDATA\Programs\Python\Python312 | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          $env:LOCALAPPDATA\Programs\Python\Python312\Scripts | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
       - name: Install Runtime Dependencies
         run: |
-          & "C:\Users\Ximena Del Pilar\AppData\Local\Programs\Python\Python312\python.exe" -m pip install requests
+          pip install requests
 
       - name: Execute Cloud Audit & Governance Verification
         env:
@@ -36,7 +41,7 @@ jobs:
           TRELLO_BOARD_ID: ${{ secrets.TRELLO_BOARD_ID || '6aaef11b808b8de50ad9237e' }}
         run: |
           if (Test-Path ".github/scripts/centinela_cloud.py") {
-            & "C:\Users\Ximena Del Pilar\AppData\Local\Programs\Python\Python312\python.exe" .github/scripts/centinela_cloud.py
+            python .github/scripts/centinela_cloud.py
           } else {
             Write-Host "Notice: Script not found in .github/scripts/centinela_cloud.py."
           }
