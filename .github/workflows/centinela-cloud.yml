@@ -46,9 +46,16 @@ jobs:
           fetch-depth: 0
 
       - name: Add Python to PATH
+        shell: pwsh
         run: |
-          "$env:LOCALAPPDATA\Programs\Python\Python312" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          "$env:LOCALAPPDATA\Programs\Python\Python312"\Scripts | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          $pyRoot = Join-Path $env:LOCALAPPDATA "Programs\Python\Python312"
+          if (-not (Test-Path (Join-Path $pyRoot "python.exe"))) {
+            Write-Error "Python 3.12 not found at $pyRoot"
+            exit 1
+          }
+          $pyRoot | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          (Join-Path $pyRoot "Scripts") | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          Write-Host "Python added to PATH: $pyRoot"
 
       - name: Install Runtime Dependencies
         run: |
