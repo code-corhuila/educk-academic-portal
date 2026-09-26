@@ -48,14 +48,15 @@ jobs:
       - name: Add Python to PATH
         shell: powershell
         run: |
-          $pyRoot = Join-Path $env:LOCALAPPDATA "Programs\Python\Python312"
-          if (-not (Test-Path (Join-Path $pyRoot "python.exe"))) {
+          $pyRoot = "C:\Python312"
+          if (-not (Test-Path "$pyRoot\python.exe")) {
             Write-Error "Python 3.12 not found at $pyRoot"
             exit 1
           }
           $pyRoot | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          (Join-Path $pyRoot "Scripts") | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "$pyRoot\Scripts" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           Write-Host "Python added to PATH: $pyRoot"
+          & "$pyRoot\python.exe" --version
 
       - name: Install Runtime Dependencies
         run: |
