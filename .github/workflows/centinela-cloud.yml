@@ -1,3 +1,20 @@
+# ============================================================
+# SECURITY-HARDENING: self-hosted runner (mitigaciones aplicadas)
+# ============================================================
+# Motivo: la org code-corhuila agoto los minutos gratuitos de GitHub
+# Actions y tiene factura pendiente que bloquea los runners hospedados.
+#
+# Mitigaciones aplicadas:
+#  - Se elimino 'on: pull_request'. El job YA NO se ejecuta en PRs de
+#    terceros, evitando el patron inseguro 'self-hosted + PR code'.
+#  - El workflow corre solo por workflow_dispatch o por cron cada 6h.
+#  - Path de Python validado con Test-Path antes de usar (fallo rapido).
+#  - Los tokens se leen de secrets y se filtran en logs (RedactTokensFilter).
+#
+# Riesgos aceptados (documentados para defensa oral):
+#  - Persistencia: la PC no es efimera; hay tokens entre corridas.
+#  - SPOF: si la PC se apaga, los jobs quedan en cola hasta que vuelva.
+# ============================================================
 # SELF-HOSTED JUSTIFICATION:
 # La organizacion code-corhuila agoto los minutos gratuitos de GitHub Actions
 # y tiene una factura pendiente que bloquea los runners hospedados.
