@@ -7,9 +7,11 @@
 name: Cloud Guardian 24/7 (EduTrack Quality Gates)
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-  workflow_dispatch:        # Manual trigger in GitHub web
+  # SECURITY: PR trigger removed. Running untrusted PR code on a self-hosted
+  # runner is a known escalation path (GitHub warns against it).
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *'   # cada 6 horas        # Manual trigger in GitHub web
 
 permissions:
   pull-requests: write
@@ -28,8 +30,8 @@ jobs:
 
       - name: Add Python to PATH
         run: |
-          $env:LOCALAPPDATA\Programs\Python\Python312 | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          $env:LOCALAPPDATA\Programs\Python\Python312\Scripts | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "$env:LOCALAPPDATA\Programs\Python\Python312" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "$env:LOCALAPPDATA\Programs\Python\Python312"\Scripts | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Install Runtime Dependencies
         run: |
