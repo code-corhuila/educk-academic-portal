@@ -20,14 +20,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Python 3.12 Runtime
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
       - name: Install Runtime Dependencies
         run: |
-          pip install requests
+          & "C:\Users\Ximena Del Pilar\AppData\Local\Programs\Python\Python312\python.exe" -m pip install requests
 
       - name: Execute Cloud Audit & Governance Verification
         env:
@@ -41,7 +36,7 @@ jobs:
           TRELLO_BOARD_ID: ${{ secrets.TRELLO_BOARD_ID || '6aaef11b808b8de50ad9237e' }}
         run: |
           if (Test-Path ".github/scripts/centinela_cloud.py") {
-            python .github/scripts/centinela_cloud.py
+            & "C:\Users\Ximena Del Pilar\AppData\Local\Programs\Python\Python312\python.exe" .github/scripts/centinela_cloud.py
           } else {
             Write-Host "Notice: Script not found in .github/scripts/centinela_cloud.py."
           }
