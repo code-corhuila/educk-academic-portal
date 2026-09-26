@@ -13,7 +13,7 @@ permissions:
 jobs:
   audit-and-sync-24-7:
     name: Quality Gates Audit, Trello & Notification Dispatch
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, windows]
     steps:
       - name: Checkout Full Repository History
         uses: actions/checkout@v4
@@ -40,8 +40,8 @@ jobs:
           TRELLO_TOKEN: ${{ secrets.TRELLO_TOKEN }}
           TRELLO_BOARD_ID: ${{ secrets.TRELLO_BOARD_ID || '6aaef11b808b8de50ad9237e' }}
         run: |
-          if [ -f ".github/scripts/centinela_cloud.py" ]; then
+          if (Test-Path ".github/scripts/centinela_cloud.py") {
             python .github/scripts/centinela_cloud.py
-          else
-            echo "Notice: Script not found in .github/scripts/centinela_cloud.py."
-          fi
+          } else {
+            Write-Host "Notice: Script not found in .github/scripts/centinela_cloud.py."
+          }
