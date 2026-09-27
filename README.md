@@ -23,3 +23,18 @@ branch into another: `merge develop -> qa` and `merge qa -> main` do not exist i
 rule.
 
 Full policy: `00-governance/branching-policy.md` in `library-docs`.
+
+## Academic API connection
+
+Copy `.env.example` to a local `.env` file and set `VITE_ACADEMIC_API_URL` to the Academic API
+Gateway route. Real `.env` files and access tokens must never be committed.
+
+The portal requests `GET /grades/student/{studentId}` every 30 seconds and forwards the optional
+`edutrack_token` as a Bearer token. `adaptGradesFromApi(rawResponse)` isolates the UI from the
+transport contract. The backend must eventually enrich each grade with `subjectName`,
+`activityTitle`, and `weight`; the current assignment metadata remains a temporary fallback.
+
+```bash
+npm test
+npm run build
+```

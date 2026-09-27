@@ -1,13 +1,48 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { academicApi } from './academicApi.js';
 import { adaptGradesFromApi, mockApiResponse } from './gradeAdapter.js';
 import { averageBySubject, classifyAverage, filterBySubject, weightedAverage } from './gradeCalculations.js';
 import './styles.css';
 
-const student = { name: 'Juan López', school: 'Colegio EduTrack · 8°A', guardian: 'María López' };
+const POLLING_INTERVAL_MS = 30_000;
+const student = {
+  id: '00000000-0000-4000-8000-000000000201',
+  name: 'Juan López',
+  school: 'Colegio EduTrack · 8°A',
+  guardian: 'María López',
+};
 
 export default function App() {
   const [selectedSubject, setSelectedSubject] = useState('ALL');
-  const grades = useMemo(() => adaptGradesFromApi(mockApiResponse), []);
+  const [grades, setGrades] = useState(() => adaptGradesFromApi(mockApiResponse));
+  const [syncState, setSyncState] = useState({ status: 'loading', message: '' });
+
+  const loadGrades = useCallback(async (signal) => {
+    setSyncState((current) => ({ ...current, status: 'loading' }));
+    try {
+      const accessToken = localStorage.getItem('edutrack_token');
+      const response = await academicApi.getStudentGrades(student.id, accessToken, { signal });
+      setGrades(adaptGradesFromApi(response));
+      setSyncState({ status: 'success', message: 'Datos sincronizados con Academic API.' });
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      setSyncState({
+        status: 'error',
+        message: 'Academic API no está disponible. Se conservan los datos de demostración.',
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    loadGrades(controller.signal);
+    const pollingId = window.setInterval(() => loadGrades(controller.signal), POLLING_INTERVAL_MS);
+    return () => {
+      controller.abort();
+      window.clearInterval(pollingId);
+    };
+  }, [loadGrades]);
+
   const subjects = useMemo(() => [...new Set(grades.map((grade) => grade.subjectName))], [grades]);
   const visibleGrades = useMemo(() => filterBySubject(grades, selectedSubject), [grades, selectedSubject]);
   const visibleAverage = weightedAverage(visibleGrades);
@@ -30,7 +65,15 @@ export default function App() {
 
       <main>
         <header><div><p>ACADÉMICO</p><h1>Calificaciones</h1><span>Consulta el rendimiento de Juan por materia.</span></div><span className="period">Periodo 2</span></header>
-        <div className="demo-notice" role="status"><b>Datos de demostración</b><span>La integración con Academic API se realizará en un segundo PR.</span></div>
+        <div className={`sync-notice ${syncState.status}`} role={syncState.status === 'error' ? 'alert' : 'status'}>
+          <div>
+            <b>{syncState.status === 'success' ? 'Academic API conectada' : 'Sincronización académica'}</b>
+            <span>{syncState.status === 'loading' ? 'Actualizando calificaciones…' : syncState.message}</span>
+          </div>
+          {syncState.status === 'error' && (
+            <button type="button" onClick={() => loadGrades()}>Reintentar</button>
+          )}
+        </div>
 
         <section className="summary-grid" aria-label="Resumen académico">
           <article><small>{selectedSubject === 'ALL' ? 'Promedio general' : 'Promedio filtrado'}</small><strong>{visibleAverage.toFixed(1)}</strong><em className={isPassing ? 'success' : 'danger'}>{isPassing ? 'Buen desempeño' : 'Requiere apoyo'}</em></article>
