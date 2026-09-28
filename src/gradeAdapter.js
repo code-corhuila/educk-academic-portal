@@ -1,7 +1,8 @@
 // The raw mock uses the agreed API-facing fields: id, assignmentId, studentId,
-// score, feedback and date. OpenAPI currently calls the timestamp `createdAt`, so
-// the adapter accepts both names. The API is still missing subjectName,
-// activityTitle and weight; this map enriches them until the backend provides them.
+// score, feedback and date. OpenAPI currently calls the timestamp `createdAt`.
+// El mock usa los campos acordados y acepta `createdAt` como fecha del contrato OpenAPI.
+// The API still needs to provide subjectName, activityTitle and weight directly.
+// El backend todavía debe entregar subjectName, activityTitle y weight directamente.
 const assignmentMetadata = {
   'asn-math-quiz': { subjectName: 'Matemáticas', activityTitle: 'Quiz: Fracciones', weight: 40 },
   'asn-math-project': { subjectName: 'Matemáticas', activityTitle: 'Proyecto de datos', weight: 60 },
@@ -20,11 +21,14 @@ export const mockApiResponse = [
 
 export function adaptGradesFromApi(rawResponse) {
   if (!Array.isArray(rawResponse)) return [];
-  return rawResponse.map((grade) => ({
-    ...grade,
-    date: grade.date ?? grade.createdAt,
-    ...(assignmentMetadata[grade.assignmentId] ?? {
-      subjectName: 'Materia sin identificar', activityTitle: 'Actividad sin identificar', weight: 0,
-    }),
-  }));
+  return rawResponse.map((grade) => {
+    const fallback = assignmentMetadata[grade.assignmentId] ?? {};
+    return {
+      ...grade,
+      date: grade.date ?? grade.createdAt,
+      subjectName: grade.subjectName ?? fallback.subjectName ?? 'Materia sin identificar',
+      activityTitle: grade.activityTitle ?? fallback.activityTitle ?? 'Actividad sin identificar',
+      weight: grade.weight ?? fallback.weight ?? 0,
+    };
+  });
 }
