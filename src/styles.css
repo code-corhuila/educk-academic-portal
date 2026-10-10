@@ -16,12 +16,15 @@ select { font: inherit; }
 .guardian { display: none; }
 main { min-width: 0; padding: 20px; }
 header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+header { flex-wrap: wrap; }
+header > div, .sync-notice > div { min-width: 0; overflow-wrap: anywhere; }
 header p { margin: 0; color: #1d4ed8; font-size: 12px; font-weight: 800; letter-spacing: 1.6px; }
 h1 { margin: 5px 0; font-size: 28px; }
 header > div > span, .panel-heading p { color: #4b5563; font-size: 13px; }
 .period { padding: 10px 14px; border: 1px solid #d1d5db; border-radius: 8px; background: #fff; color: #1f2937; white-space: nowrap; }
 .sync-notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 22px 0; padding: 13px 16px; border: 1px solid #bfdbfe; border-radius: 10px; background: #eff6ff; color: #1e3a8a; font-size: 13px; }
 .sync-notice div { display: grid; gap: 3px; }
+.sync-notice { flex-wrap: wrap; }
 .sync-notice.error { border-color: #fecaca; background: #fef2f2; color: #991b1b; }
 .sync-notice.success { border-color: #a7f3d0; background: #ecfdf5; color: #065f46; }
 .sync-notice button { padding: 8px 12px; border: 1px solid currentColor; border-radius: 8px; background: transparent; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
