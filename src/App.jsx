@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { academicApi } from './academicApi.js';
-import { adaptGradesFromApi, mockApiResponse } from './gradeAdapter.js';
+import { adaptGradesFromApi } from './gradeAdapter.js';
 import { averageBySubject, classifyAverage, filterBySubject, weightedAverage } from './gradeCalculations.js';
 import './styles.css';
 
@@ -14,7 +14,7 @@ const student = {
 
 export default function App() {
   const [selectedSubject, setSelectedSubject] = useState('ALL');
-  const [grades, setGrades] = useState(() => adaptGradesFromApi(mockApiResponse));
+  const [grades, setGrades] = useState([]);
   const [syncState, setSyncState] = useState({ status: 'loading', message: '' });
 
   const loadGrades = useCallback(async (signal) => {
