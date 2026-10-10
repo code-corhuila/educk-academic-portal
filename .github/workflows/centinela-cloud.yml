@@ -1,7 +1,7 @@
 name: Cloud Guardian 24/7 (EduTrack Quality Gates)
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened]
   workflow_dispatch:        # Manual trigger in GitHub web
 
