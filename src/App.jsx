@@ -7,9 +7,15 @@ import './styles.css';
 const POLLING_INTERVAL_MS = 30_000;
 const student = {
   id: '00000000-0000-4000-8000-000000000201',
-  name: 'Juan López',
-  school: 'Colegio EduTrack · 8°A',
+  name: 'Juan Sebastián López',
+  school: 'Colegio EduTrack · 10°A',
   guardian: 'María López',
+};
+
+const ROLE_HEADERS = {
+  ACUDIENTE: { eyebrow: 'PORTAL FAMILIAS · BOLETÍN OFICIAL', title: 'Mis Calificaciones y Desempeño', subtitle: `Estudiante: ${student.name} (${student.school}) · Acudiente: ${student.guardian}` },
+  DOCENTE: { eyebrow: 'PORTAL DOCENTE · GESTIÓN DE EVALUACIONES', title: 'Planilla de Calificaciones · Grado 10°A', subtitle: 'Titular: Prof. Carlos Ramírez · Registro de notas parciales y retroalimentación' },
+  DIRECTIVO: { eyebrow: 'DIRECCIÓN ACADÉMICA · SUPERVISIÓN CURRICULAR', title: 'Consolidado Académico Institucional', subtitle: 'Monitoreo de promedios ponderados, aprobación y asignaturas en riesgo' },
 };
 
 function readAccessToken() {
@@ -30,8 +36,14 @@ export default function App() {
   const [selectedPeriod, setSelectedPeriod] = useState('Periodo 2');
   const [grades, setGrades] = useState(() => adaptGradesFromApi(mockApiResponse));
   const [syncState, setSyncState] = useState({ status: 'loading', message: '', traceId: '' });
+  const [newGrade, setNewGrade] = useState({ subjectName: 'Matemáticas', activityTitle: '', weight: 30, score: 4.5, feedback: '' });
 
   const isEmbedded = typeof window !== 'undefined' && (window.self !== window.top || window.location.search.includes('embedded=1'));
+  const activeRole = useMemo(() => {
+    const urlRole = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('role')?.toUpperCase() : '';
+    return ['ACUDIENTE', 'DOCENTE', 'DIRECTIVO'].includes(urlRole) ? urlRole : 'ACUDIENTE';
+  }, []);
+  const headerMeta = ROLE_HEADERS[activeRole];
 
   const loadGrades = useCallback(async (signal) => {
     const trace = createTraceHeaders();
@@ -69,6 +81,23 @@ export default function App() {
   const supportSubject = subjectSummaries.at(-1);
   const isPassing = classifyAverage(visibleAverage) === 'approved';
 
+  const handleAddGrade = (e) => {
+    e.preventDefault();
+    if (!newGrade.activityTitle.trim()) return;
+    const entry = {
+      id: `g-${Date.now()}`,
+      subjectName: newGrade.subjectName,
+      activityTitle: newGrade.activityTitle.trim(),
+      weight: Number(newGrade.weight) || 25,
+      score: Math.min(5, Math.max(0, Number(newGrade.score) || 0)),
+      feedback: newGrade.feedback.trim() || 'Evaluación registrada por el docente titular.',
+      date: '25 oct 2026',
+    };
+    setGrades((current) => [entry, ...current]);
+    setNewGrade({ subjectName: newGrade.subjectName, activityTitle: '', weight: 30, score: 4.5, feedback: '' });
+    setSyncState((current) => ({ ...current, status: 'success', message: `Calificación "${entry.activityTitle}" registrada en la planilla.` }));
+  };
+
   const handleExportReport = () => {
     const lines = [
       `COLEGIO EDUTRACK — BOLETÍN ACADÉMICO OFICIAL (${selectedPeriod.toUpperCase()})`,
@@ -103,9 +132,9 @@ export default function App() {
       <main>
         <header className="exec-header">
           <div>
-            <p>PORTAL ACADÉMICO · VIGENCIA 2026-B</p>
-            <h1>Calificaciones y Boletín Escolar</h1>
-            <span>Seguimiento curricular de <strong>{student.name}</strong> ({student.school}) · Acudiente: {student.guardian}</span>
+            <p>{headerMeta.eyebrow}</p>
+            <h1>{headerMeta.title}</h1>
+            <span>{headerMeta.subtitle}</span>
           </div>
           <div className="header-actions">
             <select aria-label="Seleccionar periodo académico" className="period-select" value={selectedPeriod} onChange={(e) => setSelectedPeriod(e.target.value)}>
@@ -132,6 +161,25 @@ export default function App() {
           <article className="kpi-emerald"><small>Mejor desempeño</small><strong>{bestSubject?.average.toFixed(1) ?? '0.0'}</strong><em>{bestSubject?.subject ?? 'Sin datos'} · Destacado</em></article>
           <article className="kpi-amber"><small>Área por reforzar</small><strong>{supportSubject?.average.toFixed(1) ?? '0.0'}</strong><em>{supportSubject?.subject ?? 'Sin datos'} · Seguimiento</em></article>
         </section>
+
+        {activeRole === 'DOCENTE' && (
+          <section className="grades-panel" style={{ padding: '18px 22px' }}>
+            <h2 style={{ fontSize: '16px', fontWeight: 800, margin: '0 0 12px', color: '#1e3a8a' }}>Registrar Nueva Calificación en Planilla</h2>
+            <form onSubmit={handleAddGrade} style={{ display: 'grid', gridTemplateColumns: '150px 1fr 90px 90px 1fr auto', gap: '10px', alignItems: 'center' }}>
+              <select value={newGrade.subjectName} onChange={(e) => setNewGrade({ ...newGrade, subjectName: e.target.value })} style={{ padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                <option value="Matemáticas">Matemáticas</option>
+                <option value="Ciencias">Ciencias</option>
+                <option value="Lenguaje">Lenguaje</option>
+                <option value="Inglés">Inglés</option>
+              </select>
+              <input type="text" placeholder="Actividad (ej. Examen Parcial)" value={newGrade.activityTitle} onChange={(e) => setNewGrade({ ...newGrade, activityTitle: e.target.value })} required style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+              <input type="number" min="5" max="100" value={newGrade.weight} onChange={(e) => setNewGrade({ ...newGrade, weight: e.target.value })} title="Peso %" style={{ padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+              <input type="number" step="0.1" min="0" max="5" value={newGrade.score} onChange={(e) => setNewGrade({ ...newGrade, score: e.target.value })} title="Nota (0.0 a 5.0)" style={{ padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontWeight: 800 }} />
+              <input type="text" placeholder="Observación docente..." value={newGrade.feedback} onChange={(e) => setNewGrade({ ...newGrade, feedback: e.target.value })} style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+              <button type="submit" style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: '#1d4ed8', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Registrar Nota</button>
+            </form>
+          </section>
+        )}
 
         <section className="grades-panel">
           <div className="panel-heading"><div><h2>Detalle de evaluaciones por asignatura</h2><p>{visibleGrades.length} calificaciones registradas en {selectedPeriod}</p></div>
