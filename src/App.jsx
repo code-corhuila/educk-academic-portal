@@ -47,14 +47,15 @@ export default function App() {
 
   const loadGrades = useCallback(async (signal) => {
     const trace = createTraceHeaders();
-    setSyncState((c) => ({ ...c, status: 'loading', traceId: trace.traceparent.slice(3, 19) }));
+    const fullTraceId = trace.traceparent.slice(3, 35);
+    setSyncState((c) => ({ ...c, status: 'loading', traceId: fullTraceId }));
     try {
       const response = await academicApi.getStudentGrades(student.id, readAccessToken(), { signal, ...trace });
       setGrades(adaptGradesFromApi(response));
-      setSyncState({ status: 'success', message: 'Datos sincronizados con Academic API.', traceId: trace.traceparent.slice(3, 19) });
+      setSyncState({ status: 'success', message: 'Datos sincronizados con Academic API.', traceId: fullTraceId });
     } catch (error) {
       if (error.name === 'AbortError') return;
-      setSyncState({ status: 'error', message: 'Modo demostrativo institucional activo (Academic API en espera).', traceId: trace.traceparent.slice(3, 19) });
+      setSyncState({ status: 'error', message: 'Modo demostrativo institucional activo (Academic API en espera).', traceId: fullTraceId });
     }
   }, []);
 
@@ -65,10 +66,11 @@ export default function App() {
     return () => { controller.abort(); window.clearInterval(pollingId); };
   }, [loadGrades]);
 
-  const subjects = useMemo(() => [...new Set(grades.map((g) => g.subjectName))], [grades]);
-  const visibleGrades = useMemo(() => filterBySubject(grades, selectedSubject), [grades, selectedSubject]);
+  const periodGrades = useMemo(() => grades.filter((g) => (g.period ?? 'Periodo 2') === selectedPeriod), [grades, selectedPeriod]);
+  const subjects = useMemo(() => [...new Set(periodGrades.map((g) => g.subjectName))], [periodGrades]);
+  const visibleGrades = useMemo(() => filterBySubject(periodGrades, selectedSubject), [periodGrades, selectedSubject]);
   const visibleAverage = weightedAverage(visibleGrades);
-  const subjectSummaries = averageBySubject(grades);
+  const subjectSummaries = averageBySubject(periodGrades);
   const bestSubject = subjectSummaries.at(0);
   const supportSubject = subjectSummaries.at(-1);
   const isPassing = classifyAverage(visibleAverage) === 'approved';
