@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildStudentGradesUrl, createAcademicApiClient } from './academicApi.js';
+import { buildStudentGradesUrl, createAcademicApiClient, createTraceHeaders } from './academicApi.js';
 
 test('builds the gateway grade endpoint without a duplicated slash', () => {
   assert.equal(
@@ -26,6 +26,23 @@ test('requests grades with the bearer token and abort signal', async () => {
   assert.equal(calls[0][0], '/academic/grades/student/student-1');
   assert.deepEqual(calls[0][1].headers, { Accept: 'application/json', Authorization: 'Bearer token-1' });
   assert.equal(calls[0][1].signal, signal);
+});
+
+test('propagates W3C traceparent and X-Correlation-Id headers when provided', async () => {
+  const calls = [];
+  const trace = createTraceHeaders();
+  const client = createAcademicApiClient({
+    baseUrl: '/academic',
+    fetchImplementation: async (...args) => {
+      calls.push(args);
+      return { ok: true, json: async () => [{ id: 'grade-1' }] };
+    },
+  });
+
+  await client.getStudentGrades('student-1', 'token-1', trace);
+
+  assert.match(calls[0][1].headers.traceparent, /^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
+  assert.equal(calls[0][1].headers['X-Correlation-Id'], trace.correlationId);
 });
 
 test('reports a non-successful backend response', async () => {
