@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { academicApi, createTraceHeaders } from './academicApi.js';
+import { academicApi, createTraceHeaders, extractShellContext, getPortalAccessToken, SHELL_ORIGIN } from './academicApi.js';
 import { adaptGradesFromApi, mockApiResponse } from './gradeAdapter.js';
 import { averageBySubject, classifyAverage, filterBySubject, weightedAverage } from './gradeCalculations.js';
 import './styles.css';
@@ -22,14 +22,6 @@ const INITIAL_SCHOOL_COURSES = [
   { course: 'Grado 6°B', director: 'Prof. Andrés Castro', subject: 'Inglés Intensivo', students: 30, avg: 4.4, approval: '96.7%', risk: 1, closed: true },
 ];
 
-function readAccessToken() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem('edutrack_session') || 'null');
-    if (parsed?.token) return parsed.token;
-  } catch { /* ignore */ }
-  return localStorage.getItem('edutrack_token');
-}
-
 export default function App() {
   const [selectedSubject, setSelectedSubject] = useState('ALL');
   const [selectedPeriod, setSelectedPeriod] = useState('Periodo 2');
@@ -38,19 +30,30 @@ export default function App() {
   const [courses, setCourses] = useState(INITIAL_SCHOOL_COURSES);
   const [teacherForm, setTeacherForm] = useState({ studentId: 'st-3', field: 'exam', score: '3.8', feedback: 'Superó nivelación de ecuaciones.' });
   const [syncState, setSyncState] = useState({ status: 'loading', message: '', traceId: '' });
+  const [shellContext, setShellContext] = useState(null);
 
-  const isEmbedded = typeof window !== 'undefined' && (window.self !== window.top || window.location.search.includes('embedded=1'));
-  const activeRole = useMemo(() => {
-    const r = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('role')?.toUpperCase() : '';
-    return ['ACUDIENTE', 'DOCENTE', 'DIRECTIVO'].includes(r) ? r : 'ACUDIENTE';
-  }, []);
+  const isStandalone = typeof window !== 'undefined' && window.parent === window;
+  const activeRole = shellContext?.role || 'ACUDIENTE';
+
+  useEffect(() => {
+    if (isStandalone) return undefined;
+    const handleMessage = (event) => {
+      const ctx = extractShellContext(event);
+      if (ctx) setShellContext(ctx);
+    };
+    window.addEventListener('message', handleMessage);
+    window.parent.postMessage({ type: 'edutrack:ready' }, SHELL_ORIGIN);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [isStandalone]);
 
   const loadGrades = useCallback(async (signal) => {
+    const token = getPortalAccessToken();
+    if (!token) return;
     const trace = createTraceHeaders();
     const fullTraceId = trace.traceparent.slice(3, 35);
     setSyncState((c) => ({ ...c, status: 'loading', traceId: fullTraceId }));
     try {
-      const response = await academicApi.getStudentGrades(student.id, readAccessToken(), { signal, ...trace });
+      const response = await academicApi.getStudentGrades(student.id, token, { signal, ...trace });
       setGrades(adaptGradesFromApi(response));
       setSyncState({ status: 'success', message: 'Datos sincronizados con Academic API.', traceId: fullTraceId });
     } catch (error) {
@@ -60,11 +63,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!shellContext?.token) return undefined;
     const controller = new AbortController();
     loadGrades(controller.signal);
     const pollingId = window.setInterval(() => loadGrades(controller.signal), POLLING_INTERVAL_MS);
     return () => { controller.abort(); window.clearInterval(pollingId); };
-  }, [loadGrades]);
+  }, [loadGrades, shellContext?.token]);
 
   const periodGrades = useMemo(() => grades.filter((g) => (g.period ?? 'Periodo 2') === selectedPeriod), [grades, selectedPeriod]);
   const subjects = useMemo(() => [...new Set(periodGrades.map((g) => g.subjectName))], [periodGrades]);
@@ -81,6 +85,18 @@ export default function App() {
     setRoster((curr) => curr.map((st) => st.id === teacherForm.studentId ? { ...st, [teacherForm.field]: num, feedback: teacherForm.feedback || st.feedback } : st));
     setSyncState((c) => ({ ...c, status: 'success', message: 'Planilla del curso 10°A actualizada correctamente por el docente.' }));
   };
+
+  if (isStandalone) {
+    return (
+      <div className="app-shell is-embedded"><main><section className="grades-panel" style={{ padding: '24px' }}><h1>Acceso Institucional Protegido</h1><p>Este módulo académico opera dentro del contenedor autenticado de EduTrack.</p><p><a href={SHELL_ORIGIN}>Ingresar desde EduTrack Shell ({SHELL_ORIGIN})</a></p></section></main></div>
+    );
+  }
+
+  if (!shellContext) {
+    return (
+      <div className="app-shell is-embedded"><main><p role="status">Sincronizando contexto seguro con EduTrack…</p></main></div>
+    );
+  }
 
   if (activeRole === 'DOCENTE') {
     const courseAvg = (roster.reduce((acc, s) => acc + (s.q1 * 0.3 + s.q2 * 0.3 + s.exam * 0.4), 0) / roster.length).toFixed(1);
@@ -157,15 +173,7 @@ export default function App() {
   }
 
   return (
-    <div className={`app-shell${isEmbedded ? ' is-embedded' : ''}`}>
-      {!isEmbedded && (
-        <aside className="sidebar">
-          <div className="brand">Edu<span>Track</span></div>
-          <div className="student-card"><b>JL</b><span>{student.name}<small>{student.school}</small></span></div>
-          <nav aria-label="Navegación principal"><span>Resumen</span><strong aria-current="page">Calificaciones</strong><span>Asistencia</span><span>Mensajes</span></nav>
-          <div className="guardian">ML <span>{student.guardian}<small>Madre / Tutora</small></span></div>
-        </aside>
-      )}
+    <div className="app-shell is-embedded">
       <main>
         <header className="exec-header">
           <div><p>PORTAL FAMILIAS · BOLETÍN INDIVIDUAL DEL ESTUDIANTE</p><h1>Boletín de Calificaciones de {student.name}</h1><span>{student.school} · Acudiente: <strong>{student.guardian}</strong></span></div>

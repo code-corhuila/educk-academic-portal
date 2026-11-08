@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildStudentGradesUrl, createAcademicApiClient, createTraceHeaders } from './academicApi.js';
+import { buildStudentGradesUrl, createAcademicApiClient, createTraceHeaders, extractShellContext, getPortalAccessToken, setPortalAccessToken } from './academicApi.js';
 
 test('builds the gateway grade endpoint without a duplicated slash', () => {
   assert.equal(
@@ -59,4 +59,15 @@ test('rejects a response that is not a grade list', async () => {
   });
 
   await assert.rejects(() => client.getStudentGrades('student-1'), /invalid grade list/);
+});
+
+test('extractShellContext accepts verified shell origin, keeps token in memory, and rejects untrusted origins', () => {
+  setPortalAccessToken('');
+  assert.equal(extractShellContext({ origin: 'http://evil.example', data: { type: 'edutrack:context', token: 'tok', role: 'DIRECTIVO' } }, 'http://localhost:3000'), null);
+  assert.equal(extractShellContext({ origin: 'null', data: { type: 'edutrack:context', token: 'tok', role: 'DIRECTIVO' } }, 'http://localhost:3000'), null);
+  assert.equal(getPortalAccessToken(), '');
+
+  const accepted = extractShellContext({ origin: 'http://localhost:3000', data: { type: 'edutrack:context', token: 'rs256-jwt', role: 'DOCENTE', user: { name: 'Prof' } } }, 'http://localhost:3000');
+  assert.equal(accepted?.role, 'DOCENTE');
+  assert.equal(getPortalAccessToken(), 'rs256-jwt');
 });
