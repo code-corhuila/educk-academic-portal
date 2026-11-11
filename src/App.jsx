@@ -105,9 +105,14 @@ export default function App() {
       <div className="app-shell is-embedded">
         <main>
           <header className="exec-header">
-            <div><p>PORTAL DOCENTE · PLANILLA OFICIAL DE CALIFICACIONES</p><h1>Curso 10°A · Matemáticas ({selectedPeriod})</h1><span>Docente Titular: <strong>Prof. Carlos Ramírez</strong> · Registro y nivelación de estudiantes</span></div>
+            <div><p>PORTAL DOCENTE · PLANILLA OFICIAL DE CALIFICACIONES</p><h1>Curso 10°A · Matemáticas ({selectedPeriod})</h1><span>Docente Titular: <strong>{shellContext?.user?.name || 'Prof. Carlos Ramírez'}</strong> · Registro y nivelación de estudiantes</span></div>
             <div className="header-actions"><select className="period-select" value={selectedPeriod} onChange={(e) => setSelectedPeriod(e.target.value)}><option>Periodo 1</option><option>Periodo 2</option><option>Final</option></select></div>
           </header>
+          {syncState.message && (
+            <div className={`sync-notice ${syncState.status}`} role="status">
+              <div><b>Planilla Docente Sincronizada</b><span>{syncState.message}</span></div>
+            </div>
+          )}
           <section className="summary-grid" style={{ marginTop: '18px' }}>
             <article className="kpi-primary"><small>Promedio del Curso 10°A</small><strong>{courseAvg}</strong><em className="success">{roster.length} estudiantes evaluados</em></article>
             <article className="kpi-emerald"><small>Estudiantes Aprobados</small><strong>{roster.length - riskCount}</strong><em>Desempeño satisfactorio</em></article>
@@ -148,8 +153,13 @@ export default function App() {
       <div className="app-shell is-embedded">
         <main>
           <header className="exec-header">
-            <div><p>DIRECCIÓN ACADÉMICA · SUPERVISIÓN INSTITUCIONAL</p><h1>Consolidado General de Rendimiento por Grado</h1><span>Coordinación: <strong>Mag. Juan Pérez</strong> · Auditoría de cierre de actas y promedios por curso</span></div>
+            <div><p>DIRECCIÓN ACADÉMICA · SUPERVISIÓN INSTITUCIONAL</p><h1>Consolidado General de Rendimiento por Grado</h1><span>Coordinación: <strong>{shellContext?.user?.name || 'Mag. Juan Pérez'}</strong> · Auditoría de cierre de actas y promedios por curso</span></div>
           </header>
+          {syncState.message && (
+            <div className={`sync-notice ${syncState.status}`} role="status">
+              <div><b>Auditoría Directiva</b><span>{syncState.message}</span></div>
+            </div>
+          )}
           <section className="summary-grid" style={{ marginTop: '18px' }}>
             <article className="kpi-primary"><small>Promedio Global Colegio</small><strong>4.0</strong><em className="success">4 Grados en seguimiento</em></article>
             <article className="kpi-emerald"><small>Índice de Aprobación</small><strong>91.3%</strong><em>Meta institucional: 90%</em></article>
@@ -161,7 +171,7 @@ export default function App() {
               <table><thead><tr><th>Grado / Curso</th><th>Docente Director de Grupo</th><th>Estudiantes</th><th>Promedio</th><th>Aprobación</th><th>En Riesgo</th><th>Acta de Periodo</th></tr></thead>
                 <tbody>{courses.map((c) => (
                   <tr key={c.course}><td><b>{c.course}</b><small>{c.subject}</small></td><td>{c.director}</td><td>{c.students}</td><td className="score">{c.avg.toFixed(1)}</td><td><span className="weight-badge">{c.approval}</span></td><td>{c.risk} est.</td>
-                    <td>{c.closed ? <span className="pill pass">Acta Cerrada</span> : <button type="button" onClick={() => setCourses((list) => list.map((x) => x.course === c.course ? { ...x, closed: true } : x))} style={{ padding: '5px 10px', borderRadius: '6px', border: 'none', background: '#1d4ed8', color: '#fff', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>Avalar Cierre de Acta</button>}</td>
+                    <td>{c.closed ? <span className="pill pass">Acta Cerrada</span> : <button type="button" onClick={() => { setCourses((list) => list.map((x) => x.course === c.course ? { ...x, closed: true } : x)); setSyncState((s) => ({ ...s, status: 'success', message: `Acta de periodo de ${c.course} avalada y cerrada oficialmente.` })); }} style={{ padding: '5px 10px', borderRadius: '6px', border: 'none', background: '#1d4ed8', color: '#fff', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>Avalar Cierre de Acta</button>}</td>
                   </tr>
                 ))}</tbody>
               </table>
@@ -181,6 +191,7 @@ export default function App() {
         </header>
         <div className={`sync-notice ${syncState.status}`} role={syncState.status === 'error' ? 'alert' : 'status'}>
           <div><b>{syncState.status === 'success' ? 'Academic API conectada' : 'Boletín familiar · Trace W3C: ' + (syncState.traceId || 'activo')}</b><span>{syncState.status === 'loading' ? 'Actualizando calificaciones…' : syncState.message}</span></div>
+          <button type="button" onClick={() => loadGrades()} disabled={syncState.status === 'loading'}>{syncState.status === 'loading' ? 'Sincronizando…' : 'Actualizar'}</button>
         </div>
         <section className="summary-grid" aria-label="Resumen académico">
           <article className="kpi-primary"><small>Promedio de mi hijo ({selectedPeriod})</small><strong>{visibleAverage.toFixed(1)}</strong><em className={isPassing ? 'success' : 'danger'}>{isPassing ? 'Desempeño Aprobado' : 'Requiere refuerzo'}</em></article>
