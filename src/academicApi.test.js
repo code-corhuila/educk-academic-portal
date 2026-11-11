@@ -1,11 +1,22 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildStudentGradesUrl, createAcademicApiClient, createTraceHeaders, extractShellContext, getPortalAccessToken, setPortalAccessToken } from './academicApi.js';
+import {
+  buildStudentGradesUrl,
+  createAcademicApiClient,
+  createTraceHeaders,
+  extractShellContext,
+  getPortalAccessToken,
+  setPortalAccessToken,
+} from './academicApi.js';
 
 test('builds the gateway grade endpoint without a duplicated slash', () => {
   assert.equal(
     buildStudentGradesUrl('http://localhost:8080/api/v1/academic/', 'student 1'),
-    'http://localhost:8080/api/v1/academic/grades/student/student%201',
+    'http://localhost:8080/api/v1/grades/student/student%201',
+  );
+  assert.equal(
+    buildStudentGradesUrl('', 'student-1'),
+    'http://localhost:8080/api/v1/grades/student/student-1',
   );
 });
 
@@ -13,7 +24,7 @@ test('requests grades with the bearer token and abort signal', async () => {
   const calls = [];
   const signal = AbortSignal.timeout(1000);
   const client = createAcademicApiClient({
-    baseUrl: '/academic',
+    baseUrl: 'http://localhost:8080/api/v1',
     fetchImplementation: async (...args) => {
       calls.push(args);
       return { ok: true, json: async () => [{ id: 'grade-1' }] };
@@ -23,7 +34,7 @@ test('requests grades with the bearer token and abort signal', async () => {
   const grades = await client.getStudentGrades('student-1', 'token-1', { signal });
 
   assert.deepEqual(grades, [{ id: 'grade-1' }]);
-  assert.equal(calls[0][0], '/academic/grades/student/student-1');
+  assert.equal(calls[0][0], 'http://localhost:8080/api/v1/grades/student/student-1');
   assert.deepEqual(calls[0][1].headers, { Accept: 'application/json', Authorization: 'Bearer token-1' });
   assert.equal(calls[0][1].signal, signal);
 });
@@ -32,7 +43,7 @@ test('propagates W3C traceparent and X-Correlation-Id headers when provided', as
   const calls = [];
   const trace = createTraceHeaders();
   const client = createAcademicApiClient({
-    baseUrl: '/academic',
+    baseUrl: 'http://localhost:8080/api/v1',
     fetchImplementation: async (...args) => {
       calls.push(args);
       return { ok: true, json: async () => [{ id: 'grade-1' }] };
