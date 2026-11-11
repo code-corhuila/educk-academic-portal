@@ -1,4 +1,5 @@
-const DEFAULT_ACADEMIC_API_URL = '/api/v1/academic';
+const GATEWAY_BASE = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_GATEWAY_URL) || 'http://localhost:8080';
+const DEFAULT_ACADEMIC_API_URL = `${GATEWAY_BASE.replace(/\/$/, '')}/api/v1/grades`;
 const ALLOWED_ROLES = new Set(['ACUDIENTE', 'DOCENTE', 'DIRECTIVO']);
 export const SHELL_ORIGIN = new URL((typeof import.meta !== 'undefined' && import.meta.env?.VITE_SHELL_ORIGIN) || 'http://localhost:3000').origin;
 
@@ -10,6 +11,28 @@ export function setPortalAccessToken(token) {
 
 export function getPortalAccessToken() {
   return portalAccessToken;
+}
+
+export function getStoredSessionToken() {
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      const stored = sessionStorage.getItem('edutrack_session');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return parsed.token || parsed.accessToken || '';
+      }
+    }
+  } catch {}
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem('edutrack_session');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return parsed.token || parsed.accessToken || '';
+      }
+    }
+  } catch {}
+  return '';
 }
 
 export function isTrustedShellOrigin(candidate, trustedUrl = SHELL_ORIGIN) {
@@ -56,8 +79,14 @@ export function createTraceHeaders() {
 }
 
 export function buildStudentGradesUrl(baseUrl, studentId) {
-  const normalizedBaseUrl = (baseUrl || DEFAULT_ACADEMIC_API_URL).replace(/\/$/, '');
-  return `${normalizedBaseUrl}/grades/student/${encodeURIComponent(studentId)}`;
+  let normalized = (baseUrl || DEFAULT_ACADEMIC_API_URL).replace(/\/$/, '');
+  if (normalized.endsWith('/academic')) {
+    return `${normalized}/grades/student/${encodeURIComponent(studentId)}`;
+  }
+  if (!normalized.includes('/grades')) {
+    normalized = normalized.includes('/api/v1') ? `${normalized}/grades` : `${normalized}/api/v1/grades`;
+  }
+  return `${normalized}/student/${encodeURIComponent(studentId)}`;
 }
 
 /**
@@ -72,7 +101,7 @@ export function createAcademicApiClient({ baseUrl, fetchImplementation = globalT
       if (!studentId) throw new Error('A studentId is required');
 
       const headers = { Accept: 'application/json' };
-      const effectiveToken = accessToken || portalAccessToken;
+      const effectiveToken = accessToken || portalAccessToken || getStoredSessionToken();
       if (effectiveToken) headers.Authorization = `Bearer ${effectiveToken}`;
       if (traceparent) headers.traceparent = traceparent;
       if (correlationId) headers['X-Correlation-Id'] = correlationId;
@@ -88,5 +117,7 @@ export function createAcademicApiClient({ baseUrl, fetchImplementation = globalT
 }
 
 export const academicApi = createAcademicApiClient({
-  baseUrl: import.meta.env?.VITE_ACADEMIC_API_URL,
+  baseUrl: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_GATEWAY_URL
+    ? `${import.meta.env.VITE_API_GATEWAY_URL.replace(/\/$/, '')}/api/v1/grades`
+    : (typeof import.meta !== 'undefined' && import.meta.env?.VITE_ACADEMIC_API_URL) || DEFAULT_ACADEMIC_API_URL),
 });

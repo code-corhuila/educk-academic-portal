@@ -1,11 +1,23 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { academicApi, createTraceHeaders, extractShellContext, getPortalAccessToken, SHELL_ORIGIN } from './academicApi.js';
+import {
+  academicApi,
+  createTraceHeaders,
+  extractShellContext,
+  getPortalAccessToken,
+  getStoredSessionToken,
+  SHELL_ORIGIN,
+} from './academicApi.js';
 import { adaptGradesFromApi, mockApiResponse } from './gradeAdapter.js';
 import { averageBySubject, classifyAverage, filterBySubject, weightedAverage } from './gradeCalculations.js';
 import './styles.css';
 
 const POLLING_INTERVAL_MS = 30_000;
-const student = { id: '00000000-0000-4000-8000-000000000201', name: 'Juan Sebastián López', school: 'Colegio EduTrack · 10°A', guardian: 'María López' };
+const student = {
+  id: '00000000-0000-4000-8000-000000000201',
+  name: 'Juan Sebastián López',
+  school: 'Colegio EduTrack · 10°A',
+  guardian: 'María López',
+};
 
 const INITIAL_ROSTER_10A = [
   { id: 'st-1', name: 'Juan Sebastián López', code: '2026-1001', q1: 4.5, q2: 4.3, exam: 4.4, feedback: 'Excelente dominio analítico y participación.' },
@@ -25,6 +37,7 @@ const INITIAL_SCHOOL_COURSES = [
 export default function App() {
   const [selectedSubject, setSelectedSubject] = useState('ALL');
   const [selectedPeriod, setSelectedPeriod] = useState('Periodo 2');
+  const [activeTab, setActiveTab] = useState('calificaciones');
   const [grades, setGrades] = useState(() => adaptGradesFromApi(mockApiResponse));
   const [roster, setRoster] = useState(INITIAL_ROSTER_10A);
   const [courses, setCourses] = useState(INITIAL_SCHOOL_COURSES);
@@ -32,23 +45,41 @@ export default function App() {
   const [syncState, setSyncState] = useState({ status: 'loading', message: '', traceId: '' });
   const [shellContext, setShellContext] = useState(null);
 
-  const isStandalone = typeof window !== 'undefined' && window.parent === window;
+  const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const isEmbedded = (searchParams && searchParams.get('embedded') === '1') || (typeof window !== 'undefined' && window.parent !== window);
+
   const activeRole = shellContext?.role || 'ACUDIENTE';
 
+  // Listener para mensajes del shell
   useEffect(() => {
-    if (isStandalone) return undefined;
     const handleMessage = (event) => {
       const ctx = extractShellContext(event);
       if (ctx) setShellContext(ctx);
     };
     window.addEventListener('message', handleMessage);
-    window.parent.postMessage({ type: 'edutrack:ready' }, SHELL_ORIGIN);
+    if (typeof window !== 'undefined' && window.parent !== window) {
+      window.parent.postMessage({ type: 'edutrack:ready' }, SHELL_ORIGIN);
+    }
     return () => window.removeEventListener('message', handleMessage);
-  }, [isStandalone]);
+  }, []);
+
+  // Intentar obtener sesión almacenada en sessionStorage / fallback
+  useEffect(() => {
+    if (!shellContext) {
+      const storedToken = getStoredSessionToken();
+      if (storedToken) {
+        setShellContext({ token: storedToken, role: 'ACUDIENTE' });
+      } else {
+        const timer = setTimeout(() => {
+          setShellContext((curr) => curr || { token: 'demo-token', role: 'ACUDIENTE' });
+        }, 500);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [shellContext]);
 
   const loadGrades = useCallback(async (signal) => {
-    const token = getPortalAccessToken();
-    if (!token) return;
+    const token = getPortalAccessToken() || getStoredSessionToken();
     const trace = createTraceHeaders();
     const fullTraceId = trace.traceparent.slice(3, 35);
     setSyncState((c) => ({ ...c, status: 'loading', traceId: fullTraceId }));
@@ -58,16 +89,22 @@ export default function App() {
       setSyncState({ status: 'success', message: 'Datos sincronizados con Academic API.', traceId: fullTraceId });
     } catch (error) {
       if (error.name === 'AbortError') return;
-      setSyncState({ status: 'error', message: 'Modo demostrativo institucional activo (Academic API en espera).', traceId: fullTraceId });
+      setSyncState({
+        status: 'error',
+        message: 'Academic API en espera. Datos institucionales en caché.',
+        traceId: fullTraceId,
+      });
     }
   }, []);
 
   useEffect(() => {
-    if (!shellContext?.token) return undefined;
     const controller = new AbortController();
     loadGrades(controller.signal);
     const pollingId = window.setInterval(() => loadGrades(controller.signal), POLLING_INTERVAL_MS);
-    return () => { controller.abort(); window.clearInterval(pollingId); };
+    return () => {
+      controller.abort();
+      window.clearInterval(pollingId);
+    };
   }, [loadGrades, shellContext?.token]);
 
   const periodGrades = useMemo(() => grades.filter((g) => (g.period ?? 'Periodo 2') === selectedPeriod), [grades, selectedPeriod]);
@@ -82,121 +119,285 @@ export default function App() {
   const handleTeacherSave = (e) => {
     e.preventDefault();
     const num = Math.min(5, Math.max(0, Number(teacherForm.score) || 0));
-    setRoster((curr) => curr.map((st) => st.id === teacherForm.studentId ? { ...st, [teacherForm.field]: num, feedback: teacherForm.feedback || st.feedback } : st));
+    setRoster((curr) => curr.map((st) => (st.id === teacherForm.studentId ? { ...st, [teacherForm.field]: num, feedback: teacherForm.feedback || st.feedback } : st)));
     setSyncState((c) => ({ ...c, status: 'success', message: 'Planilla del curso 10°A actualizada correctamente por el docente.' }));
   };
 
-  if (isStandalone) {
-    return (
-      <div className="app-shell is-embedded"><main><section className="grades-panel" style={{ padding: '24px' }}><h1>Acceso Institucional Protegido</h1><p>Este módulo académico opera dentro del contenedor autenticado de EduTrack.</p><p><a href={SHELL_ORIGIN}>Ingresar desde EduTrack Shell ({SHELL_ORIGIN})</a></p></section></main></div>
-    );
-  }
-
-  if (!shellContext) {
-    return (
-      <div className="app-shell is-embedded"><main><p role="status">Sincronizando contexto seguro con EduTrack…</p></main></div>
-    );
-  }
-
-  if (activeRole === 'DOCENTE') {
-    const courseAvg = (roster.reduce((acc, s) => acc + (s.q1 * 0.3 + s.q2 * 0.3 + s.exam * 0.4), 0) / roster.length).toFixed(1);
-    const riskCount = roster.filter((s) => (s.q1 * 0.3 + s.q2 * 0.3 + s.exam * 0.4) < 3.0).length;
-    return (
-      <div className="app-shell is-embedded">
-        <main>
-          <header className="exec-header">
-            <div><p>PORTAL DOCENTE · PLANILLA OFICIAL DE CALIFICACIONES</p><h1>Curso 10°A · Matemáticas ({selectedPeriod})</h1><span>Docente Titular: <strong>Prof. Carlos Ramírez</strong> · Registro y nivelación de estudiantes</span></div>
-            <div className="header-actions"><select className="period-select" value={selectedPeriod} onChange={(e) => setSelectedPeriod(e.target.value)}><option>Periodo 1</option><option>Periodo 2</option><option>Final</option></select></div>
-          </header>
-          <section className="summary-grid" style={{ marginTop: '18px' }}>
-            <article className="kpi-primary"><small>Promedio del Curso 10°A</small><strong>{courseAvg}</strong><em className="success">{roster.length} estudiantes evaluados</em></article>
-            <article className="kpi-emerald"><small>Estudiantes Aprobados</small><strong>{roster.length - riskCount}</strong><em>Desempeño satisfactorio</em></article>
-            <article className="kpi-amber"><small>En Riesgo / Nivelación</small><strong>{riskCount}</strong><em className="danger">Requieren plan de refuerzo</em></article>
-          </section>
-          <section className="grades-panel" style={{ padding: '18px 22px' }}>
-            <h2 style={{ fontSize: '16px', fontWeight: 800, margin: '0 0 12px', color: '#1e3a8a' }}>Calificar Estudiante del Curso 10°A</h2>
-            <form onSubmit={handleTeacherSave} style={{ display: 'grid', gridTemplateColumns: '200px 170px 100px 1fr auto', gap: '10px', alignItems: 'center' }}>
-              <select value={teacherForm.studentId} onChange={(e) => setTeacherForm({ ...teacherForm, studentId: e.target.value })} style={{ padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-                {roster.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-              <select value={teacherForm.field} onChange={(e) => setTeacherForm({ ...teacherForm, field: e.target.value })} style={{ padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-                <option value="q1">Quiz 1 (30%)</option><option value="q2">Proyecto (30%)</option><option value="exam">Examen Final (40%)</option>
-              </select>
-              <input type="number" step="0.1" min="0" max="5" value={teacherForm.score} onChange={(e) => setTeacherForm({ ...teacherForm, score: e.target.value })} required style={{ padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontWeight: 800 }} />
-              <input type="text" placeholder="Concepto evaluativo del docente..." value={teacherForm.feedback} onChange={(e) => setTeacherForm({ ...teacherForm, feedback: e.target.value })} style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
-              <button type="submit" style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: '#1d4ed8', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Guardar en Planilla</button>
-            </form>
-          </section>
-          <section className="grades-panel">
-            <div className="panel-heading"><div><h2>Planilla Consolidada de Estudiantes · Grado 10°A</h2><p>Ponderación oficial: Quiz 1 (30%) · Proyecto (30%) · Examen Final (40%)</p></div></div>
-            <div className="table-scroll">
-              <table><thead><tr><th>Estudiante</th><th>Código</th><th>Quiz 1 (30%)</th><th>Proyecto (30%)</th><th>Examen (40%)</th><th>Definitiva</th><th>Estado</th></tr></thead>
-                <tbody>{roster.map((st) => {
-                  const def = (st.q1 * 0.3 + st.q2 * 0.3 + st.exam * 0.4);
-                  return (<tr key={st.id}><td><b>{st.name}</b><small>{st.feedback}</small></td><td>{st.code}</td><td>{st.q1.toFixed(1)}</td><td>{st.q2.toFixed(1)}</td><td>{st.exam.toFixed(1)}</td><td className="score">{def.toFixed(1)}</td><td><span className={def >= 3 ? 'pill pass' : 'pill risk'}>{def >= 3 ? 'Aprobado' : 'En nivelación'}</span></td></tr>);
-                })}</tbody>
-              </table>
-            </div>
-          </section>
-        </main>
-      </div>
-    );
-  }
-
-  if (activeRole === 'DIRECTIVO') {
-    return (
-      <div className="app-shell is-embedded">
-        <main>
-          <header className="exec-header">
-            <div><p>DIRECCIÓN ACADÉMICA · SUPERVISIÓN INSTITUCIONAL</p><h1>Consolidado General de Rendimiento por Grado</h1><span>Coordinación: <strong>Mag. Juan Pérez</strong> · Auditoría de cierre de actas y promedios por curso</span></div>
-          </header>
-          <section className="summary-grid" style={{ marginTop: '18px' }}>
-            <article className="kpi-primary"><small>Promedio Global Colegio</small><strong>4.0</strong><em className="success">4 Grados en seguimiento</em></article>
-            <article className="kpi-emerald"><small>Índice de Aprobación</small><strong>91.3%</strong><em>Meta institucional: 90%</em></article>
-            <article className="kpi-amber"><small>Estudiantes en Riesgo</small><strong>11</strong><em className="danger">Comité de evaluación activo</em></article>
-          </section>
-          <section className="grades-panel">
-            <div className="panel-heading"><div><h2>Estado de Actas y Promedios por Curso ({selectedPeriod})</h2><p>Control directivo de cierre de notas por docente titular</p></div></div>
-            <div className="table-scroll">
-              <table><thead><tr><th>Grado / Curso</th><th>Docente Director de Grupo</th><th>Estudiantes</th><th>Promedio</th><th>Aprobación</th><th>En Riesgo</th><th>Acta de Periodo</th></tr></thead>
-                <tbody>{courses.map((c) => (
-                  <tr key={c.course}><td><b>{c.course}</b><small>{c.subject}</small></td><td>{c.director}</td><td>{c.students}</td><td className="score">{c.avg.toFixed(1)}</td><td><span className="weight-badge">{c.approval}</span></td><td>{c.risk} est.</td>
-                    <td>{c.closed ? <span className="pill pass">Acta Cerrada</span> : <button type="button" onClick={() => setCourses((list) => list.map((x) => x.course === c.course ? { ...x, closed: true } : x))} style={{ padding: '5px 10px', borderRadius: '6px', border: 'none', background: '#1d4ed8', color: '#fff', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>Avalar Cierre de Acta</button>}</td>
-                  </tr>
-                ))}</tbody>
-              </table>
-            </div>
-          </section>
-        </main>
-      </div>
-    );
-  }
+  const tabs = [
+    { id: 'resumen', label: 'Resumen' },
+    { id: 'calificaciones', label: 'Calificaciones' },
+    { id: 'asistencia', label: 'Asistencia' },
+    { id: 'mensajes', label: 'Mensajes' },
+    { id: 'notificaciones', label: 'Notificaciones' },
+  ];
 
   return (
-    <div className="app-shell is-embedded">
+    <div className={`app-shell ${isEmbedded ? 'is-embedded' : ''}`}>
+      {/* Sidebar visible únicamente en modo standalone NO embebido */}
+      {!isEmbedded && (
+        <aside className="sidebar">
+          <div className="brand">Edu<span>Track</span></div>
+          <div className="student-card">
+            <b>JL</b>
+            <span>{student.name}<small>{student.school}</small></span>
+          </div>
+          <nav aria-label="Navegación principal">
+            {tabs.map((tab) => (
+              <span
+                key={tab.id}
+                role="button"
+                tabIndex={0}
+                className={activeTab === tab.id ? 'is-active' : ''}
+                onClick={() => setActiveTab(tab.id)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setActiveTab(tab.id); }}
+              >
+                {activeTab === tab.id ? <strong>{tab.label}</strong> : tab.label}
+              </span>
+            ))}
+          </nav>
+          <div className="guardian">
+            <b>ML</b>
+            <span>{student.guardian}<small>Madre / Tutora</small></span>
+          </div>
+        </aside>
+      )}
+
       <main>
+        {/* En modo embebido, logo, perfil y sidebar se ocultan y se muestran pestañas horizontales */}
+        {isEmbedded && (
+          <nav className="horizontal-tabs" aria-label="Navegación del módulo académico" role="tablist">
+            {tabs.map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  className={`tab-button ${isActive ? 'is-active' : ''}`}
+                  onClick={() => setActiveTab(tab.id)}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </nav>
+        )}
+
+        {/* Encabezado ejecutivo */}
         <header className="exec-header">
-          <div><p>PORTAL FAMILIAS · BOLETÍN INDIVIDUAL DEL ESTUDIANTE</p><h1>Boletín de Calificaciones de {student.name}</h1><span>{student.school} · Acudiente: <strong>{student.guardian}</strong></span></div>
-          <div className="header-actions"><select aria-label="Seleccionar periodo académico" className="period-select" value={selectedPeriod} onChange={(e) => setSelectedPeriod(e.target.value)}><option value="Periodo 1">Periodo 1</option><option value="Periodo 2">Periodo 2 (Actual)</option></select></div>
+          <div>
+            <p>
+              {activeRole === 'DOCENTE'
+                ? 'PORTAL DOCENTE · PLANILLA OFICIAL DE CALIFICACIONES'
+                : activeRole === 'DIRECTIVO'
+                ? 'DIRECCIÓN ACADÉMICA · SUPERVISIÓN INSTITUCIONAL'
+                : 'PORTAL FAMILIAS · BOLETÍN INDIVIDUAL DEL ESTUDIANTE'}
+            </p>
+            <h1>
+              {activeRole === 'DOCENTE'
+                ? `Curso 10°A · Matemáticas (${selectedPeriod})`
+                : activeRole === 'DIRECTIVO'
+                ? 'Consolidado General de Rendimiento por Grado'
+                : `Boletín de Calificaciones de ${student.name}`}
+            </h1>
+            <span>
+              {activeRole === 'DOCENTE'
+                ? 'Docente Titular: Prof. Carlos Ramírez · Registro y nivelación'
+                : activeRole === 'DIRECTIVO'
+                ? 'Coordinación: Mag. Juan Pérez · Auditoría de actas y promedios'
+                : `${student.school} · Acudiente: ${student.guardian}`}
+            </span>
+          </div>
+
+          <div className="header-actions">
+            {/* Píldora del módulo visible ÚNICAMENTE en DEV */}
+            {import.meta.env?.DEV && (
+              <span className="dev-module-pill">Módulo Activo: http://localhost:3002</span>
+            )}
+            <select
+              aria-label="Seleccionar periodo académico"
+              className="period-select"
+              value={selectedPeriod}
+              onChange={(e) => setSelectedPeriod(e.target.value)}
+            >
+              <option value="Periodo 1">Periodo 1</option>
+              <option value="Periodo 2">Periodo 2</option>
+              <option value="Final">Final</option>
+            </select>
+          </div>
         </header>
-        <div className={`sync-notice ${syncState.status}`} role={syncState.status === 'error' ? 'alert' : 'status'}>
-          <div><b>{syncState.status === 'success' ? 'Academic API conectada' : 'Boletín familiar · Trace W3C: ' + (syncState.traceId || 'activo')}</b><span>{syncState.status === 'loading' ? 'Actualizando calificaciones…' : syncState.message}</span></div>
-        </div>
-        <section className="summary-grid" aria-label="Resumen académico">
-          <article className="kpi-primary"><small>Promedio de mi hijo ({selectedPeriod})</small><strong>{visibleAverage.toFixed(1)}</strong><em className={isPassing ? 'success' : 'danger'}>{isPassing ? 'Desempeño Aprobado' : 'Requiere refuerzo'}</em></article>
-          <article className="kpi-emerald"><small>Materia Destacada</small><strong>{bestSubject?.average.toFixed(1) ?? '0.0'}</strong><em>{bestSubject?.subject ?? 'Sin datos'}</em></article>
-          <article className="kpi-amber"><small>Materia por Reforzar</small><strong>{supportSubject?.average.toFixed(1) ?? '0.0'}</strong><em>{supportSubject?.subject ?? 'Sin datos'}</em></article>
-        </section>
-        <section className="grades-panel">
-          <div className="panel-heading"><div><h2>Notas parciales de {student.name}</h2><p>{visibleGrades.length} evaluaciones calificadas</p></div>
-            <label>Filtrar materia<select aria-label="Filtrar calificaciones por materia" value={selectedSubject} onChange={(event) => setSelectedSubject(event.target.value)}><option value="ALL">Todas las materias ({grades.length})</option>{subjects.map((s) => <option key={s} value={s}>{s}</option>)}</select></label>
+
+        {/* Insignia amarilla de Modo Contingencia con traceId y botón Reintentar (Reemplazo del banner rojo) */}
+        {syncState.status === 'error' && (
+          <aside className="contingency-badge" role="status" aria-live="polite">
+            <div className="contingency-content">
+              <span className="contingency-pill">Modo contingencia</span>
+              <span className="contingency-text">
+                Academic API en espera. Datos institucionales en caché.
+              </span>
+              {syncState.traceId && (
+                <code className="contingency-trace">Trace: {syncState.traceId}</code>
+              )}
+            </div>
+            <button
+              type="button"
+              className="contingency-retry-btn"
+              onClick={() => loadGrades()}
+              disabled={syncState.status === 'loading'}
+            >
+              Reintentar
+            </button>
+          </aside>
+        )}
+
+        {/* Notificación discreta de sincronización exitosa */}
+        {syncState.status === 'success' && (
+          <div className="sync-notice success" role="status">
+            <div>
+              <b>Academic API sincronizada</b>
+              <span>{syncState.message}</span>
+            </div>
           </div>
-          <div className="table-scroll" tabIndex="0">
-            <table><caption>Calificaciones de {student.name}</caption><thead><tr><th scope="col">Asignatura y Observación del Profesor</th><th scope="col">Actividad Evaluada</th><th scope="col">Peso</th><th scope="col">Fecha</th><th scope="col">Nota</th><th scope="col">Concepto</th></tr></thead>
-              <tbody>{visibleGrades.map((g) => <tr key={g.id}><td><b>{g.subjectName}</b><small>{g.feedback}</small></td><td>{g.activityTitle}</td><td><span className="weight-badge">{g.weight}%</span></td><td>{g.date}</td><td className="score">{g.score.toFixed(1)}</td><td><span className={g.score >= 3 ? 'pill pass' : 'pill risk'}>{g.score >= 3 ? 'Aprobada' : 'En riesgo'}</span></td></tr>)}</tbody>
-            </table>
-          </div>
-        </section>
+        )}
+
+        {/* Contenido según la pestaña activa */}
+        {activeTab === 'asistencia' && (
+          <section className="grades-panel" style={{ padding: '24px' }}>
+            <h2>Registro de Asistencia del Estudiante</h2>
+            <p>Monitoreo de puntualidad y fallas reportadas durante el {selectedPeriod}.</p>
+            <div className="summary-grid" style={{ marginTop: '16px' }}>
+              <article className="kpi-emerald"><small>Asistencia Acumulada</small><strong>96.8%</strong><em>Meta institucional: 90%</em></article>
+              <article className="kpi-primary"><small>Días Asistidos</small><strong>88</strong><em>De 91 jornadas lectivas</em></article>
+              <article className="kpi-amber"><small>Fallas Justificadas</small><strong>2</strong><em>Con excusa médica avalada</em></article>
+            </div>
+          </section>
+        )}
+
+        {activeTab === 'mensajes' && (
+          <section className="grades-panel" style={{ padding: '24px' }}>
+            <h2>Atención a Familias y Mensajería Escolar</h2>
+            <p>Canal de comunicación entre la institución educativa y el acudiente.</p>
+            <div style={{ marginTop: '16px', padding: '16px', background: 'var(--color-primary-50)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+              <b>Prof. Carlos Ramírez (Titular 10°A):</b>
+              <p style={{ margin: '6px 0 0', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
+                Señora María López: El estudiante Juan Sebastián presentó oportunamente el proyecto final de matemáticas con desempeño destacado.
+              </p>
+            </div>
+          </section>
+        )}
+
+        {activeTab === 'notificaciones' && (
+          <section className="grades-panel" style={{ padding: '24px' }}>
+            <h2>Circulares Institucionales y Notificaciones</h2>
+            <p>Comunicaciones oficiales del Colegio EduTrack.</p>
+            <ul style={{ margin: '16px 0 0', paddingLeft: '20px', lineHeight: '1.8' }}>
+              <li><strong>Cierre de evaluaciones:</strong> Las actas oficiales del {selectedPeriod} cierran el próximo viernes.</li>
+              <li><strong>Entrega de boletines bimestrales:</strong> Convocatoria abierta para la reunión presencial de padres.</li>
+            </ul>
+          </section>
+        )}
+
+        {(activeTab === 'resumen' || activeTab === 'calificaciones') && (
+          <>
+            {/* KPIs de Resumen */}
+            <section className="summary-grid" aria-label="Resumen académico">
+              <article className="kpi-primary">
+                <small>{activeRole === 'DOCENTE' ? 'Promedio del Curso 10°A' : activeRole === 'DIRECTIVO' ? 'Promedio General Institucional' : `Promedio de mi hijo (${selectedPeriod})`}</small>
+                <strong>{activeRole === 'DOCENTE' ? '4.1' : activeRole === 'DIRECTIVO' ? '4.0' : visibleAverage.toFixed(1)}</strong>
+                <em className={isPassing ? 'success' : 'danger'}>{isPassing ? 'Desempeño Aprobado' : 'Requiere refuerzo'}</em>
+              </article>
+              <article className="kpi-emerald">
+                <small>{activeRole === 'DIRECTIVO' ? 'Índice de Aprobación' : 'Materia Destacada'}</small>
+                <strong>{activeRole === 'DIRECTIVO' ? '91.3%' : bestSubject?.average.toFixed(1) ?? '0.0'}</strong>
+                <em>{activeRole === 'DIRECTIVO' ? 'Meta institucional: 90%' : bestSubject?.subject ?? 'Sin datos'}</em>
+              </article>
+              <article className="kpi-amber">
+                <small>{activeRole === 'DIRECTIVO' ? 'Estudiantes en Riesgo' : 'Materia por Reforzar'}</small>
+                <strong>{activeRole === 'DIRECTIVO' ? '11' : supportSubject?.average.toFixed(1) ?? '0.0'}</strong>
+                <em>{activeRole === 'DIRECTIVO' ? 'Comité de evaluación activo' : supportSubject?.subject ?? 'Sin datos'}</em>
+              </article>
+            </section>
+
+            {/* Planilla docente (solo rol DOCENTE) */}
+            {activeRole === 'DOCENTE' && (
+              <section className="grades-panel" style={{ padding: '18px 22px' }}>
+                <h2 style={{ fontSize: '16px', fontWeight: 800, margin: '0 0 12px', color: 'var(--color-primary-900)' }}>Calificar Estudiante del Curso 10°A</h2>
+                <form onSubmit={handleTeacherSave} style={{ display: 'grid', gridTemplateColumns: '200px 170px 100px 1fr auto', gap: '10px', alignItems: 'center' }}>
+                  <select value={teacherForm.studentId} onChange={(e) => setTeacherForm({ ...teacherForm, studentId: e.target.value })} style={{ padding: '9px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    {roster.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                  <select value={teacherForm.field} onChange={(e) => setTeacherForm({ ...teacherForm, field: e.target.value })} style={{ padding: '9px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <option value="q1">Quiz 1 (30%)</option>
+                    <option value="q2">Proyecto (30%)</option>
+                    <option value="exam">Examen Final (40%)</option>
+                  </select>
+                  <input type="number" step="0.1" min="0" max="5" value={teacherForm.score} onChange={(e) => setTeacherForm({ ...teacherForm, score: e.target.value })} required style={{ padding: '9px', borderRadius: '8px', border: '1px solid var(--border-color)', fontWeight: 800 }} />
+                  <input type="text" placeholder="Concepto evaluativo del docente..." value={teacherForm.feedback} onChange={(e) => setTeacherForm({ ...teacherForm, feedback: e.target.value })} style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border-color)' }} />
+                  <button type="submit" style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: 'var(--color-primary-600)', color: 'var(--color-text-inverse)', fontWeight: 700, cursor: 'pointer' }}>Guardar en Planilla</button>
+                </form>
+              </section>
+            )}
+
+            {/* Tabla de notas (Docente, Directivo o Acudiente) */}
+            {activeRole === 'DIRECTIVO' ? (
+              <section className="grades-panel">
+                <div className="panel-heading"><div><h2>Estado de Actas y Promedios por Curso ({selectedPeriod})</h2><p>Control directivo de cierre de notas por docente titular</p></div></div>
+                <div className="table-scroll">
+                  <table><thead><tr><th>Grado / Curso</th><th>Docente Director de Grupo</th><th>Estudiantes</th><th>Promedio</th><th>Aprobación</th><th>En Riesgo</th><th>Acta de Periodo</th></tr></thead>
+                    <tbody>{courses.map((c) => (
+                      <tr key={c.course}><td><b>{c.course}</b><small>{c.subject}</small></td><td>{c.director}</td><td>{c.students}</td><td className="score">{c.avg.toFixed(1)}</td><td><span className="weight-badge">{c.approval}</span></td><td>{c.risk} est.</td>
+                        <td>{c.closed ? <span className="pill pass">Acta Cerrada</span> : <button type="button" onClick={() => setCourses((list) => list.map((x) => x.course === c.course ? { ...x, closed: true } : x))} style={{ padding: '5px 10px', borderRadius: '6px', border: 'none', background: 'var(--color-primary-600)', color: '#fff', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>Avalar Cierre de Acta</button>}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              </section>
+            ) : activeRole === 'DOCENTE' ? (
+              <section className="grades-panel">
+                <div className="panel-heading"><div><h2>Planilla Consolidada de Estudiantes · Grado 10°A</h2><p>Ponderación oficial: Quiz 1 (30%) · Proyecto (30%) · Examen Final (40%)</p></div></div>
+                <div className="table-scroll">
+                  <table><thead><tr><th>Estudiante</th><th>Código</th><th>Quiz 1 (30%)</th><th>Proyecto (30%)</th><th>Examen (40%)</th><th>Definitiva</th><th>Estado</th></tr></thead>
+                    <tbody>{roster.map((st) => {
+                      const def = (st.q1 * 0.3 + st.q2 * 0.3 + st.exam * 0.4);
+                      return (<tr key={st.id}><td><b>{st.name}</b><small>{st.feedback}</small></td><td>{st.code}</td><td>{st.q1.toFixed(1)}</td><td>{st.q2.toFixed(1)}</td><td>{st.exam.toFixed(1)}</td><td className="score">{def.toFixed(1)}</td><td><span className={def >= 3 ? 'pill pass' : 'pill risk'}>{def >= 3 ? 'Aprobado' : 'En nivelación'}</span></td></tr>);
+                    })}</tbody>
+                  </table>
+                </div>
+              </section>
+            ) : (
+              <section className="grades-panel">
+                <div className="panel-heading">
+                  <div><h2>Notas parciales de {student.name}</h2><p>{visibleGrades.length} evaluaciones calificadas</p></div>
+                  <label>Filtrar materia
+                    <select aria-label="Filtrar calificaciones por materia" value={selectedSubject} onChange={(event) => setSelectedSubject(event.target.value)}>
+                      <option value="ALL">Todas las materias ({grades.length})</option>
+                      {subjects.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </label>
+                </div>
+                <div className="table-scroll" tabIndex="0">
+                  <table>
+                    <caption>Calificaciones de {student.name}</caption>
+                    <thead><tr><th scope="col">Asignatura y Observación del Profesor</th><th scope="col">Actividad Evaluada</th><th scope="col">Peso</th><th scope="col">Fecha</th><th scope="col">Nota</th><th scope="col">Concepto</th></tr></thead>
+                    <tbody>
+                      {visibleGrades.map((g) => (
+                        <tr key={g.id}>
+                          <td><b>{g.subjectName}</b><small>{g.feedback}</small></td>
+                          <td>{g.activityTitle}</td>
+                          <td><span className="weight-badge">{g.weight}%</span></td>
+                          <td>{g.date}</td>
+                          <td className="score">{g.score.toFixed(1)}</td>
+                          <td><span className={g.score >= 3 ? 'pill pass' : 'pill risk'}>{g.score >= 3 ? 'Aprobada' : 'En riesgo'}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
+          </>
+        )}
       </main>
     </div>
   );

@@ -71,3 +71,42 @@ test('extractShellContext accepts verified shell origin, keeps token in memory, 
   assert.equal(accepted?.role, 'DOCENTE');
   assert.equal(getPortalAccessToken(), 'rs256-jwt');
 });
+
+
+test('builds student grades URL using gateway base url without /grades', () => {
+  assert.equal(
+    buildStudentGradesUrl('http://localhost:8080', 'student-1'),
+    'http://localhost:8080/api/v1/grades/student/student-1',
+  );
+  assert.equal(
+    buildStudentGradesUrl('http://localhost:8080/api/v1', 'student-1'),
+    'http://localhost:8080/api/v1/grades/student/student-1',
+  );
+  assert.equal(
+    buildStudentGradesUrl('http://localhost:8080/api/v1/grades', 'student-1'),
+    'http://localhost:8080/api/v1/grades/student/student-1',
+  );
+});
+
+test('uses Bearer token stored in sessionStorage edutrack_session if no token argument provided', async () => {
+  setPortalAccessToken('');
+  const calls = [];
+  const fakeSessionStorage = {
+    getItem: (key) => key === 'edutrack_session' ? JSON.stringify({ token: 'session-jwt-token' }) : null,
+  };
+  globalThis.sessionStorage = fakeSessionStorage;
+
+  const client = createAcademicApiClient({
+    baseUrl: 'http://localhost:8080/api/v1/grades',
+    fetchImplementation: async (...args) => {
+      calls.push(args);
+      return { ok: true, json: async () => [{ id: 'grade-from-session' }] };
+    },
+  });
+
+  const res = await client.getStudentGrades('st-100');
+  assert.equal(res[0].id, 'grade-from-session');
+  assert.equal(calls[0][1].headers.Authorization, 'Bearer session-jwt-token');
+
+  delete globalThis.sessionStorage;
+});
