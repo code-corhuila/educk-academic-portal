@@ -9,6 +9,12 @@ const assignmentMetadata = {
   'asn-science-lab': { subjectName: 'Ciencias', activityTitle: 'Laboratorio 3', weight: 100 },
   'asn-language-essay': { subjectName: 'Lenguaje', activityTitle: 'Ensayo corto', weight: 100 },
   'asn-english-listening': { subjectName: 'Inglés', activityTitle: 'Listening test', weight: 100 },
+  '00000000-0000-4000-8000-000000000301': { subjectName: 'Matemáticas', activityTitle: 'Quiz: Fracciones', weight: 40 },
+  '00000000-0000-4000-8000-000000000302': { subjectName: 'Matemáticas', activityTitle: 'Proyecto de datos', weight: 60 },
+  '00000000-0000-4000-8000-000000000303': { subjectName: 'Ciencias', activityTitle: 'Laboratorio 3', weight: 50 },
+  '00000000-0000-4000-8000-000000000304': { subjectName: 'Ciencias', activityTitle: 'Taller Ecosistemas', weight: 50 },
+  '00000000-0000-4000-8000-000000000305': { subjectName: 'Lenguaje', activityTitle: 'Ensayo corto', weight: 50 },
+  '00000000-0000-4000-8000-000000000306': { subjectName: 'Lenguaje', activityTitle: 'Control de lectura', weight: 50 },
 };
 
 export const mockApiResponse = [
