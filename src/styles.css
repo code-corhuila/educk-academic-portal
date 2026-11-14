@@ -27,7 +27,7 @@ button, select, input { font: inherit; color: inherit; }
 
 /* ───────── Encabezado ───────── */
 .page-header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-5); }
-.eyebrow { margin: 0 0 var(--space-1); font-size: var(--font-size-xs); font-weight: var(--font-weight-bold); letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-primary-600); }
+.eyebrow { margin: 0 0 var(--space-1); font-size: var(--font-size-xs); font-weight: var(--font-weight-bold); letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-brand-teal); }
 .page-title { margin: 0; font-size: var(--font-size-3xl); line-height: var(--line-height-tight); font-weight: var(--font-weight-bold); letter-spacing: var(--tracking-tight); color: var(--color-neutral-900); }
 .page-subtitle { margin: var(--space-2) 0 0; color: var(--color-text-secondary); }
 .page-subtitle strong { font-weight: var(--font-weight-semibold); color: var(--color-text-primary); }
