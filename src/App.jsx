@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { academicApi, createTraceHeaders, extractShellContext, getPortalAccessToken, SHELL_ORIGIN } from './academicApi.js';
-import { adaptGradesFromApi, formatGradeDate, mockApiResponse } from './gradeAdapter.js';
+import { adaptGradesFromApi, DEMO_EXAM_ASSIGNMENT_ID, formatGradeDate, mockApiResponse } from './gradeAdapter.js';
 import { averageBySubject, classifyAverage, filterBySubject, weightedAverage } from './gradeCalculations.js';
 import './styles.css';
 
@@ -183,13 +183,39 @@ export default function App() {
   const supportSubject = subjectSummaries.at(-1);
   const isPassing = classifyAverage(periodAverage) === 'approved';
 
-  const handleTeacherSave = (e) => {
+  // Solo Juan Sebastián (st-1) existe en la base de datos; el resto de la planilla es de demostración local.
+  const REAL_STUDENT_IDS = { 'st-1': '00000000-0000-4000-8000-000000000201' };
+
+  const handleTeacherSave = async (e) => {
     e.preventDefault();
     const raw = Number(teacherForm.score);
     const num = Math.round(Math.min(5, Math.max(0, Number.isFinite(raw) ? raw : 0)) * 10) / 10;
     const target = roster.find((st) => st.id === teacherForm.studentId);
-    setRoster((curr) => curr.map((st) => (st.id === teacherForm.studentId ? { ...st, [teacherForm.field]: num, feedback: teacherForm.feedback || st.feedback } : st)));
-    setNotice(`Nota ${fmt(num)} registrada para ${target?.name ?? 'el estudiante'} en la planilla del curso 10°A.`);
+    const updateRoster = () => setRoster((curr) => curr.map((st) => (st.id === teacherForm.studentId ? { ...st, [teacherForm.field]: num, feedback: teacherForm.feedback || st.feedback } : st)));
+
+    const realStudentId = REAL_STUDENT_IDS[teacherForm.studentId];
+    const token = getPortalAccessToken();
+    if (!realStudentId || teacherForm.field !== 'exam' || !token) {
+      updateRoster();
+      setNotice(`Nota ${fmt(num)} registrada para ${target?.name ?? 'el estudiante'} solo en la planilla de demostración (no se envía a la API).`);
+      return;
+    }
+
+    const trace = createTraceHeaders();
+    const traceId = trace.traceparent.slice(3, 11);
+    try {
+      await academicApi.createGrade(
+        { studentId: realStudentId, assignmentId: DEMO_EXAM_ASSIGNMENT_ID, score: num, weight: 0.4, feedback: teacherForm.feedback || 'Examen final' },
+        token,
+        { ...trace, idempotencyKey: `${realStudentId}-${DEMO_EXAM_ASSIGNMENT_ID}` },
+      );
+      updateRoster();
+      setNotice(`Nota ${fmt(num)} guardada en la Academic API para ${target?.name} (trace ${traceId}). El acudiente ya la ve en su boletín.`);
+    } catch (error) {
+      if (error.status === 409) setNotice('Esa nota ya existe en la Academic API para este estudiante y evaluación; no se duplica.');
+      else if (error.status === 401 || error.status === 403) setNotice('No tienes permiso para calificar esta evaluación.');
+      else setNotice(`No se pudo guardar en la Academic API (${error.status ? `HTTP ${error.status}` : 'sin conexión con el Gateway'}). La nota no se registró.`);
+    }
   };
 
   const handleCloseActa = (courseName) => {
