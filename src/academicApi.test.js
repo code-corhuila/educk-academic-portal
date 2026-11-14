@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildGradesUrl,
   buildStudentGradesUrl,
   createAcademicApiClient,
   createTraceHeaders,
@@ -120,4 +121,40 @@ test('uses Bearer token stored in sessionStorage edutrack_session if no token ar
   assert.equal(calls[0][1].headers.Authorization, 'Bearer session-jwt-token');
 
   delete globalThis.sessionStorage;
+});
+
+test('normalizes legacy and relative base URLs so requests always reach the gateway', () => {
+  assert.equal(buildStudentGradesUrl('/api/v1/academic', 'a'), 'http://localhost:8080/api/v1/grades/student/a');
+  assert.equal(buildStudentGradesUrl('https://api.example.com', 'a'), 'https://api.example.com/api/v1/grades/student/a');
+  assert.equal(buildGradesUrl('http://localhost:8080/api/v1/grades/'), 'http://localhost:8080/api/v1/grades');
+});
+
+test('createGrade POSTs the grade with bearer, trace and idempotency headers', async () => {
+  const calls = [];
+  const trace = createTraceHeaders();
+  const client = createAcademicApiClient({
+    baseUrl: 'http://localhost:8080',
+    fetchImplementation: async (...args) => {
+      calls.push(args);
+      return { ok: true, json: async () => ({ id: 'new-grade' }) };
+    },
+  });
+  const payload = { studentId: 's-1', assignmentId: 'a-1', score: 4.5, weight: 0.4, feedback: 'ok' };
+
+  const created = await client.createGrade(payload, 'tok', { ...trace, idempotencyKey: 'key-1' });
+
+  assert.deepEqual(created, { id: 'new-grade' });
+  assert.equal(calls[0][0], 'http://localhost:8080/api/v1/grades');
+  assert.equal(calls[0][1].method, 'POST');
+  assert.deepEqual(JSON.parse(calls[0][1].body), payload);
+  assert.equal(calls[0][1].headers.Authorization, 'Bearer tok');
+  assert.equal(calls[0][1].headers['Idempotency-Key'], 'key-1');
+  assert.equal(calls[0][1].headers['Content-Type'], 'application/json');
+  assert.equal(calls[0][1].headers.traceparent, trace.traceparent);
+});
+
+test('createGrade exposes the HTTP status so the UI can explain 403 / 409 / 503', async () => {
+  const client = createAcademicApiClient({ fetchImplementation: async () => ({ ok: false, status: 403 }) });
+  await assert.rejects(() => client.createGrade({ studentId: 's', assignmentId: 'a', score: 4 }, 't'), (e) => e.status === 403);
+  await assert.rejects(() => client.createGrade({ score: 4 }, 't'), /required/);
 });

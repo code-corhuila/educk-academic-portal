@@ -75,17 +75,34 @@ export function createTraceHeaders() {
 }
 
 /**
- * Normaliza la URL base para que SIEMPRE apunte al Gateway:
- *  - vacío                       -> http://localhost:8080/api/v1
- *  - relativa ('/api/v1/...')    -> se antepone el Gateway (si no, caería en el propio portal :3002)
- *  - termina en '/academic'      -> se quita (ese prefijo no existe en el Gateway)
+ * Normaliza la URL base para que SIEMPRE apunte al Gateway y termine en /api/v1:
+ *  - vacío                          -> http://localhost:8080/api/v1
+ *  - 'http://localhost:8080'        -> se agrega /api/v1
+ *  - relativa ('/api/v1/...')       -> se antepone el Gateway (si no, caería en el propio portal :3002)
+ *  - termina en '/academic' o '/grades' -> se quita (el Gateway no tiene /api/v1/academic)
  */
 export function resolveBaseUrl(rawBaseUrl) {
   let base = typeof rawBaseUrl === 'string' ? rawBaseUrl.trim() : '';
   if (!base) return DEFAULT_ACADEMIC_API_URL;
-  base = base.replace(/\/+$/, '').replace(/\/academic$/, '');
+  base = base.replace(/\/+$/, '').replace(/\/(academic|grades)$/, '');
   if (base.startsWith('/')) base = `${GATEWAY_URL}${base}`;
+  if (!/\/api\/v1$/.test(base)) base = `${base}/api/v1`;
   return base;
+}
+
+export function buildGradesUrl(baseUrl) {
+  return `${resolveBaseUrl(baseUrl)}/grades`;
+}
+
+/** Token guardado por el Shell en sessionStorage (solo existe si el portal comparte origen con el Shell). */
+function readSessionToken() {
+  try {
+    const raw = globalThis.sessionStorage?.getItem('edutrack_session');
+    const token = raw ? JSON.parse(raw)?.token : '';
+    return typeof token === 'string' ? token : '';
+  } catch {
+    return '';
+  }
 }
 
 export function buildStudentGradesUrl(baseUrl, studentId) {
@@ -104,7 +121,7 @@ export function createAcademicApiClient({ baseUrl, fetchImplementation = globalT
       if (!studentId) throw new Error('A studentId is required');
 
       const headers = { Accept: 'application/json' };
-      const effectiveToken = accessToken || portalAccessToken;
+      const effectiveToken = accessToken || portalAccessToken || readSessionToken();
       if (effectiveToken) headers.Authorization = `Bearer ${effectiveToken}`;
       if (traceparent) headers.traceparent = traceparent;
       if (correlationId) headers['X-Correlation-Id'] = correlationId;
@@ -120,10 +137,37 @@ export function createAcademicApiClient({ baseUrl, fetchImplementation = globalT
       if (!Array.isArray(payload)) throw new Error('Academic API returned an invalid grade list');
       return payload;
     },
+
+    /**
+     * POST /api/v1/grades  (solo el docente dueño de la asignatura; el Gateway exige Bearer).
+     * Idempotency-Key evita duplicar la nota si el docente reintenta tras un corte de red.
+     */
+    async createGrade({ studentId, assignmentId, score, weight, feedback } = {}, accessToken, { signal, traceparent, correlationId, idempotencyKey } = {}) {
+      if (!studentId || !assignmentId) throw new Error('studentId and assignmentId are required');
+
+      const headers = { Accept: 'application/json', 'Content-Type': 'application/json' };
+      const effectiveToken = accessToken || portalAccessToken || readSessionToken();
+      if (effectiveToken) headers.Authorization = `Bearer ${effectiveToken}`;
+      if (traceparent) headers.traceparent = traceparent;
+      if (correlationId) headers['X-Correlation-Id'] = correlationId;
+      headers['Idempotency-Key'] = idempotencyKey || globalThis.crypto?.randomUUID?.() || `${Date.now()}-${randomHex(8)}`;
+
+      const response = await fetchImplementation(buildGradesUrl(baseUrl), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ studentId, assignmentId, score, weight, feedback }),
+        signal,
+      });
+      if (!response.ok) {
+        const error = new Error(`Academic API request failed with status ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
+      return response.json();
+    },
   };
 }
 
 export const academicApi = createAcademicApiClient({
   baseUrl: import.meta.env?.VITE_ACADEMIC_API_URL,
 });
-
