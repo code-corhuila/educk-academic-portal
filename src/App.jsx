@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { academicApi, createTraceHeaders, extractShellContext, getPortalAccessToken, SHELL_ORIGIN } from './academicApi.js';
-import { adaptGradesFromApi, mockApiResponse } from './gradeAdapter.js';
+import { adaptGradesFromApi, formatGradeDate, mockApiResponse } from './gradeAdapter.js';
 import { averageBySubject, classifyAverage, filterBySubject, weightedAverage } from './gradeCalculations.js';
 import './styles.css';
 
@@ -176,6 +176,7 @@ export default function App() {
   const periodGrades = useMemo(() => grades.filter((g) => (g.period ?? 'Periodo 2') === selectedPeriod), [grades, selectedPeriod]);
   const subjects = useMemo(() => [...new Set(periodGrades.map((g) => g.subjectName))], [periodGrades]);
   const visibleGrades = useMemo(() => filterBySubject(periodGrades, selectedSubject), [periodGrades, selectedSubject]);
+  const hasGrades = periodGrades.length > 0;
   const periodAverage = weightedAverage(periodGrades);
   const subjectSummaries = averageBySubject(periodGrades);
   const bestSubject = subjectSummaries.at(0);
@@ -404,9 +405,9 @@ export default function App() {
         {tab === 'resumen' ? (
           <>
             <section className="kpi-grid" aria-label="Resumen académico">
-              <Kpi label={`Promedio general (${selectedPeriod})`} value={fmt(periodAverage)} hint={isPassing ? 'Buen desempeño' : 'Requiere refuerzo'} tone={isPassing ? 'success' : 'danger'} />
-              <Kpi label="Mejor materia" value={fmt(bestSubject?.average)} hint={bestSubject?.subject ?? 'Sin datos'} tone="success" />
-              <Kpi label="Por reforzar" value={fmt(supportSubject?.average)} hint={supportSubject?.subject ?? 'Sin datos'} tone="warning" />
+              <Kpi label={`Promedio general (${selectedPeriod})`} value={hasGrades ? fmt(periodAverage) : '—'} hint={!hasGrades ? 'Sin calificaciones' : isPassing ? 'Buen desempeño' : 'Requiere refuerzo'} tone={!hasGrades ? 'neutral' : isPassing ? 'success' : 'danger'} />
+              <Kpi label="Mejor materia" value={bestSubject ? fmt(bestSubject.average) : '—'} hint={bestSubject?.subject ?? 'Sin datos'} tone={bestSubject ? 'success' : 'neutral'} />
+              <Kpi label="Por reforzar" value={supportSubject ? fmt(supportSubject.average) : '—'} hint={supportSubject?.subject ?? 'Sin datos'} tone={supportSubject ? 'warning' : 'neutral'} />
             </section>
 
             <section className="card" aria-labelledby="promedios-titulo">
@@ -462,7 +463,7 @@ export default function App() {
                         <td><span className="cell-strong">{g.subjectName}</span><small>{g.feedback}</small></td>
                         <td>{g.activityTitle}</td>
                         <td><span className="badge badge--neutral">{g.weight}%</span></td>
-                        <td className="num">{g.date}</td>
+                        <td className="num">{formatGradeDate(g.date)}</td>
                         <td className="score">{fmt(g.score)}</td>
                         <td><Badge ok={g.score >= PASSING_SCORE} okLabel="Aprobada" badLabel="En riesgo" /></td>
                       </tr>
@@ -478,4 +479,3 @@ export default function App() {
     </div>
   );
 }
-
