@@ -3,6 +3,9 @@
 // El mock usa los campos acordados y acepta `createdAt` como fecha del contrato OpenAPI.
 // The API still needs to provide subjectName, activityTitle and weight directly.
 // El backend todavía debe entregar subjectName, activityTitle y weight directamente.
+// Asignación de Matemáticas (docente titular) que la migración de demostración debe dejar creada y SIN calificar.
+export const DEMO_EXAM_ASSIGNMENT_ID = '00000000-0000-4000-8000-000000000307';
+
 const assignmentMetadata = {
   'asn-math-quiz': { subjectName: 'Matemáticas', activityTitle: 'Quiz: Fracciones', weight: 40 },
   'asn-math-project': { subjectName: 'Matemáticas', activityTitle: 'Proyecto de datos', weight: 60 },
@@ -15,6 +18,8 @@ const assignmentMetadata = {
   '00000000-0000-4000-8000-000000000304': { subjectName: 'Ciencias', activityTitle: 'Taller Ecosistemas', weight: 50 },
   '00000000-0000-4000-8000-000000000305': { subjectName: 'Lenguaje', activityTitle: 'Ensayo corto', weight: 50 },
   '00000000-0000-4000-8000-000000000306': { subjectName: 'Lenguaje', activityTitle: 'Control de lectura', weight: 50 },
+  // Asignación SIN nota para Juan: es la que el docente califica en vivo durante la demostración.
+  [DEMO_EXAM_ASSIGNMENT_ID]: { subjectName: 'Matemáticas', activityTitle: 'Examen final', weight: 40 },
 };
 
 export const mockApiResponse = [
@@ -25,6 +30,23 @@ export const mockApiResponse = [
   { id: 'g-5', assignmentId: 'asn-english-listening', studentId: 'stu-juan', score: 4.4, feedback: 'Excelente comprensión', date: '22 ago 2026' },
 ];
 
+const MONTHS_ES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
+// La API devuelve el peso como fracción (0.4000); el portal lo muestra como porcentaje (40%).
+// Un valor > 1 ya viene en porcentaje (datos de demostración) y se deja igual.
+export function weightToPercent(weight) {
+  const value = Number(weight);
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return value <= 1 ? Math.round(value * 10000) / 100 : value;
+}
+
+// La API devuelve createdAt ISO ("2026-11-11T22:38:12.451"); se muestra "11 nov 2026". Un texto ya formateado se respeta.
+export function formatGradeDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}/.test(value)) return value ?? '';
+  const [year, month, day] = value.slice(0, 10).split('-').map(Number);
+  return `${day} ${MONTHS_ES[month - 1]} ${year}`;
+}
+
 export function adaptGradesFromApi(rawResponse) {
   if (!Array.isArray(rawResponse)) return [];
   return rawResponse.map((grade) => {
@@ -34,7 +56,7 @@ export function adaptGradesFromApi(rawResponse) {
       date: grade.date ?? grade.createdAt,
       subjectName: grade.subjectName ?? fallback.subjectName ?? 'Materia sin identificar',
       activityTitle: grade.activityTitle ?? fallback.activityTitle ?? 'Actividad sin identificar',
-      weight: grade.weight ?? fallback.weight ?? 0,
+      weight: weightToPercent(grade.weight ?? fallback.weight),
     };
   });
 }
